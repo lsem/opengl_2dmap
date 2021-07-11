@@ -134,7 +134,11 @@ int main() {
   glDeleteShader(v_shader);
   glDeleteShader(frag_shader);
 
-  float vertices[] = {-0.5f, -0.5f, 0.0f, 0.5f, -0.5f, 0.0f, 0.0f, 0.5f, 0.0f};
+  float dx1 = -0.25;
+  float dx2 = +0.25;
+  float vertices[] = {dx1 + -0.25f, -0.25f, 0.0f, dx1 + 0.25f,  -0.25f, 0.0f,
+                      dx1 + 0.0f,   0.25f,  0.0f, dx2 + -0.25f, -0.25f, 0.0f,
+                      dx2 + 0.25f,  -0.25f, 0.0f, dx2 + 0.0f,   0.25f,  0.0f};
 
   unsigned int VAO, VBO;
   glGenVertexArrays(1, &VAO);
@@ -171,7 +175,7 @@ int main() {
     glUseProgram(shaderProgram);
     glBindVertexArray(VAO);  // can be not bound each time but often is like
                              // that in realistic program
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
