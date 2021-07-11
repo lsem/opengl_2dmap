@@ -31,12 +31,11 @@ void processInput(GLFWwindow* window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
   else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-  	g_prev_wireframe_mode = g_wireframe_mode;
-  	g_wireframe_mode = true;
-  }
-  else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
-  	g_prev_wireframe_mode = g_wireframe_mode;
-  	g_wireframe_mode = false;
+    g_prev_wireframe_mode = g_wireframe_mode;
+    g_wireframe_mode = true;
+  } else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
+    g_prev_wireframe_mode = g_wireframe_mode;
+    g_wireframe_mode = false;
   }
 }
 
@@ -136,46 +135,62 @@ int main() {
 
   float dx1 = -0.25;
   float dx2 = +0.25;
-  float vertices[] = {dx1 + -0.25f, -0.25f, 0.0f, dx1 + 0.25f,  -0.25f, 0.0f,
-                      dx1 + 0.0f,   0.25f,  0.0f, dx2 + -0.25f, -0.25f, 0.0f,
-                      dx2 + 0.25f,  -0.25f, 0.0f, dx2 + 0.0f,   0.25f,  0.0f};
+  float vertices1[] = {dx1 + -0.25f, -0.25f,     0.0f,  dx1 + 0.25f, -0.25f,
+                       0.0f,         dx1 + 0.0f, 0.25f, 0.0f};
+  float vertices2[] = {dx2 + -0.25f, -0.25f,     0.0f,  dx2 + 0.25f, -0.25f,
+                       0.0f,         dx2 + 0.0f, 0.25f, 0.0f};
 
-  unsigned int VAO, VBO;
-  glGenVertexArrays(1, &VAO);
-  glGenBuffers(1, &VBO);
+  unsigned int VAO1, VBO1, VAO2, VBO2;
 
-  glBindVertexArray(VAO);
-  glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-  //
+  // Prepare first triangle object
+  glGenVertexArrays(1, &VAO1);
+  glGenBuffers(1, &VBO1);
+  glBindVertexArray(VAO1);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO1);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices1), vertices1, GL_STATIC_DRAW);
   // Linking vertex attributes (tell OpenGL how to bind loaded vertex data to
   // vars in shader program)
-  //
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
   glEnableVertexAttribArray(0);
+  // unbind vao and vbo
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
 
+  // Prepare second triangle object
+  glGenVertexArrays(1, &VAO2);
+  glGenBuffers(1, &VBO2);
+  glBindVertexArray(VAO2);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO2);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices2), vertices2, GL_STATIC_DRAW);
+  // Linking vertex attributes (tell OpenGL how to bind loaded vertex data to
+  // vars in shader program)
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+  glEnableVertexAttribArray(0);
   // todo: unbind vao and vbo
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
 
   while (!glfwWindowShouldClose(window)) {
-  	_update_fps_counter(window);
+    _update_fps_counter(window);
     processInput(window);
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (g_wireframe_mode && g_wireframe_mode != g_prev_wireframe_mode) {
-    	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    } else if (!g_wireframe_mode && g_wireframe_mode != g_prev_wireframe_mode){
-    	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    } else if (!g_wireframe_mode && g_wireframe_mode != g_prev_wireframe_mode) {
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
     glUseProgram(shaderProgram);
-    glBindVertexArray(VAO);  // can be not bound each time but often is like
-                             // that in realistic program
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(VAO1);  // can be not bound each time but often is like //
+                              // that in realistic program
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    glBindVertexArray(VAO2);  // can be not bound each time but often is like //
+                              // that in realistic program
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
