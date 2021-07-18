@@ -8,8 +8,8 @@
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
 #include <iostream>
-#include "gg.h"
 #include <limits>
+#include "gg.h"
 
 using namespace std;
 
@@ -153,6 +153,59 @@ const char* crosshair_fshader = R"shader(
 
 unsigned g_window_width, g_window_height;
 
+struct PanningState {
+  bool panning = false;
+  int prev_x = 0, prev_y = 0;
+};
+
+// Class needed to be able to use closures as callbacks.
+struct GLFWMouseController {
+  // using Self = GLFWMouseController;
+  using mouse_button_cb_t =
+      std::function<void(GLFWwindow* wnd, int btn, int act, int mods)>;
+  using mouse_scroll_cb_t =
+      std::function<void(GLFWwindow* wnd, double xoffset, double yoffset)>;
+  using mouse_move_cb_t =
+      std::function<void(GLFWwindow* wnd, double xpos, double ypos)>;
+
+  inline static mouse_button_cb_t btn_cb;
+  inline static mouse_scroll_cb_t scroll_cb;
+  inline static mouse_move_cb_t move_cb;
+
+  static void set_mouse_button_callback(mouse_button_cb_t cb) {
+    GLFWMouseController::btn_cb = std::move(cb);
+  }
+  static void set_mouse_scroll_callback(mouse_scroll_cb_t cb) {
+    GLFWMouseController::scroll_cb = std::move(cb);
+  }
+  static void set_mouse_move_callback(mouse_move_cb_t cb) {
+    GLFWMouseController::move_cb = std::move(cb);
+  }
+
+  static void mouse_move_callback(GLFWwindow* wnd, double xpos, double ypos) {
+    if (move_cb) {
+      move_cb(wnd, xpos, ypos);
+    }
+  }
+
+  static void mouse_scroll_callback(GLFWwindow* wnd,
+                                    double xoffset,
+                                    double yoffset) {
+    if (scroll_cb) {
+      scroll_cb(wnd, xoffset, yoffset);
+    }
+  }
+
+  static void mouse_button_callback(GLFWwindow* wnd,
+                                    int btn,
+                                    int act,
+                                    int mods) {
+    if (btn_cb) {
+      btn_cb(wnd, btn, act, mods);
+    }
+  }
+};
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
   g_window_width = width;
   g_window_height = height;
@@ -181,18 +234,56 @@ int main() {
   }
 
   DisplayManager dm{g_window_width, g_window_height};
-
   cameras::Cam2d cam{&dm, glm::vec2{100.0, 200.0}, 1.0};
+  PanningState panning_state;
 
   glfwMakeContextCurrent(window);
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+  // ------------------------------------------------------------------------
+  // Mouse control:
+  //  press left mouse button and move left/right to pan window.
+  //  press CTRL and use cursor to move around center.
+  glfwSetCursorPosCallback(window, &GLFWMouseController::mouse_move_callback);
+  glfwSetScrollCallback(window, &GLFWMouseController::mouse_scroll_callback);
+  glfwSetMouseButtonCallback(window,
+                             &GLFWMouseController::mouse_button_callback);
+  GLFWMouseController::set_mouse_move_callback(
+      [&panning_state, &cam](auto* wnd, double xpos, double ypos) {
+        if (panning_state.panning) {
+          if (panning_state.prev_x == 0 && panning_state.prev_y == 0) {
+            panning_state.prev_x = xpos;
+            panning_state.prev_y = ypos;
+          }
+          auto dx = xpos - panning_state.prev_x;
+          auto dy = ypos - panning_state.prev_y;
+          panning_state.prev_x = xpos;
+          panning_state.prev_y = ypos;
+          cam.focus_pos += glm::vec2{-dx / cam.zoom, -dy / cam.zoom};
+        }
+      });
+  GLFWMouseController::set_mouse_button_callback(
+      [&panning_state](GLFWwindow* wnd, int btn, int act, int mods) {
+        if (act == GLFW_PRESS && btn == GLFW_MOUSE_BUTTON_LEFT) {
+          panning_state.panning = true;
+        } else if (act == GLFW_RELEASE && btn == GLFW_MOUSE_BUTTON_LEFT) {
+          panning_state.panning = false;
+          panning_state.prev_x = 0;
+          panning_state.prev_y = 0;
+        }
+      });
+  GLFWMouseController::set_mouse_scroll_callback(
+      [&cam](GLFWwindow* wnd, double xoffset, double yoffset) {
+        cam.zoom += yoffset * 0.1;
+      });
+  // ------------------------------------------------------------------------
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     std::cout << "Failed to initialize GLAD" << std::endl;
     return -1;
   }
 
-  glfwSwapInterval(0);
+  glfwSwapInterval(1);
   glfwShowWindow(window);
 
   int success;
@@ -328,6 +419,19 @@ int main() {
 
   /// END CORSS
 
+  float cx = 0.0, cy = 0.0;
+  for (auto& v : vertices3) {
+    cx += v.x, cy += v.y;
+  }
+  cx /= 3.0, cy /= 3.0;
+
+  auto cos_t = std::cos(glfwGetTime());
+  // cam.focus_pos = glm::vec2{cx + std::cos(glfwGetTime() / 3) *
+  // g_window_width / 2, cy};
+  cam.focus_pos = glm::vec2{cx, cy};
+  // cam.zoom = std::fabs(std::cos(glfwGetTime())) * 2.5;
+  // cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
+
   while (!glfwWindowShouldClose(window)) {
     _update_fps_counter(window);
     processInput(window);
@@ -342,18 +446,6 @@ int main() {
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
       }
     }
-
-    float cx = 0.0, cy = 0.0;
-    for (auto& v : vertices3) {
-      cx += v.x, cy += v.y;
-    }
-    cx /= 3.0, cy /= 3.0;
-
-    auto cos_t = std::cos(glfwGetTime());
-    //cam.focus_pos = glm::vec2{cx + std::cos(glfwGetTime() / 3) * g_window_width / 2, cy};
-    cam.focus_pos = glm::vec2{cx, cy};
-    cam.zoom = std::fabs(std::cos(glfwGetTime())) * 2.5;
-    cam.rotation = std::cos(glfwGetTime()) * M_PI / 2.0;
 
     glUseProgram(shaderProgram2);
     auto proj = cam.projection_maxtrix();
