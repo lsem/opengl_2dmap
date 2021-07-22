@@ -69,27 +69,42 @@ struct Cam2d {
 
   // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
-    auto project_m = glm::ortho(0.0f, (float)this->dm->window_size_x(),
-                                (float)this->dm->window_size_y(), 0.0f);
+    float w = this->dm->window_size_x(), h = this->dm->window_size_y();
 
-    auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
+    auto project_m = glm::ortho(0.0f, w, h, 0.0f);
 
-    // now suppose we want to have a zoom relative to point P
-    glm::vec2 P{focus_pos[0] - 100, focus_pos[1] - 100};
+    glm::mat4 view{1.0f};
+    view = glm::translate(view, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
+    view = glm::rotate(view, this->rotation /* glm::radians(50.0f)*/,
+                       glm::vec3{0.0f, 0.0f, -1.0f});                 // 3-rd
+    view = glm::scale(view, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
+    view = glm::translate(
+        view, glm::vec3{-focus_pos[0], -focus_pos[1], 0.0f});  // 1-st
 
-    glm::mat4 transform{1.0f};
-    transform = glm::translate(transform, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
-    transform = glm::rotate(transform, this->rotation /* glm::radians(50.0f)*/, glm::vec3{0.0f, 0.0f, -1.0f});  // 3-rd
-    transform = glm::scale(transform, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
-    transform = glm::translate(transform, glm::vec3{-focus_pos[0], -focus_pos[1], 0.0f});  // 1-st
+    // next question? how to return back zooming around location?
+#if 0
+    auto rotation_matrix = glm::rotate(glm::mat4{1.0f}, this->rotation, glm::vec3{.0f, .0f, -1.0f});
+    glm::vec4 rotated_vec = rotation_matrix * glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
 
-    return project_m * transform;
+    auto e_focus_pos = focus_pos + glm::vec2{-300.0f, -300.f};
+
+    glm::vec3 cam_front = glm::vec3{.0f, .0f, -1.0f};
+    glm::vec3 cam_up = glm::vec3{rotated_vec.x, rotated_vec.y, rotated_vec.z};
+    //glm::vec3 cam_up = glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
+    glm::mat4 view = glm::lookAt(
+        glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f},
+        cam_front + glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f}, cam_up);
+#endif
+    return project_m * view;
   }
 
   glm::vec2 unproject(glm::vec2 p) const {
     auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
-    auto clip_p =
-        glm::vec4{p[0] / w * 2.0 - 1.0, p[1] / h * 2.0 - 1.0, 0.0, 1.0};
+    auto clip_p = glm::vec4{
+        p[0] / w * 2.0 - 1.0,
+        (p[1] / h * 2.0 - 1.0) * -1.0,  // *-1 because we have y flipped
+                                        // relative to opengl clip space
+        0.0, 1.0};
     return glm::inverse(projection_maxtrix()) * clip_p;
   }
 };
@@ -176,7 +191,7 @@ unsigned g_window_width, g_window_height;
 
 struct PanningState {
   bool panning = false;
-  int prev_x = 0, prev_y = 0;
+  int prev_x = 0, prev_y = 0;  // use int to be able to compare with 0.
 };
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
@@ -226,16 +241,18 @@ int main() {
   glfw_helpers::GLFWMouseController::set_mouse_move_callback(
       [&panning_state, &cam](auto* wnd, double xpos, double ypos) {
         if (panning_state.panning) {
-          if (panning_state.prev_x == 0 && panning_state.prev_y == 0) {
+          if (panning_state.prev_x == 0.0 && panning_state.prev_y == 0.0) {
             panning_state.prev_x = xpos;
             panning_state.prev_y = ypos;
           }
-          auto dx = xpos - panning_state.prev_x;
-          auto dy = ypos - panning_state.prev_y;
+
+          auto prev_u = cam.unproject(
+              glm::vec2{panning_state.prev_x, panning_state.prev_y});
+          auto curr_u = cam.unproject(glm::vec2{xpos, ypos});
+          cam.focus_pos -= curr_u - prev_u;
+
           panning_state.prev_x = xpos;
           panning_state.prev_y = ypos;
-          // todo: fix that, rotation not working.
-          cam.focus_pos += glm::vec2{-dx / cam.zoom, -dy / cam.zoom};
         }
       });
   glfw_helpers::GLFWMouseController::set_mouse_button_callback(
@@ -260,18 +277,18 @@ int main() {
         std::cout << "mouse_pos_world: " << mouse_pos_world << std::endl;
         cam.zoom_pos = mouse_pos_world;
 
-        //cam.zoom = cam.zoom + yoffset * 0.1;
+        cam.zoom = cam.zoom + yoffset * 0.1;
 
-        // auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
-        // auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
-        // cam.focus_pos -= diff;
+        auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
+        auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
+        cam.focus_pos -= diff;
 
-        //cam.zoom_pos = glm::vec2{cx, cy};
+        cam.zoom_pos = glm::vec2{cx, cy};
 
 #ifndef NDEBUG
-        // auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
-        // assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
-        // std::cout << "zoom-around-loc: sanity test passed\n";
+        auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
+        assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
+        std::cout << "zoom-around-loc: sanity test passed\n";
 #endif
       });
   // ------------------------------------------------------------------------
@@ -430,7 +447,7 @@ int main() {
     _update_fps_counter(window);
     processInput(window);
 
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClearColor(.9f, .9f, .9f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (g_wireframe_mode != g_prev_wireframe_mode) {
@@ -441,7 +458,8 @@ int main() {
       }
     }
 
-    cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
+    cam.rotation = std::cos(glfwGetTime() / 4) * 2 * M_PI / 3;
+    // cam.rotation = glm::radians(45.0f);
 
     glUseProgram(shaderProgram2);
     auto proj = cam.projection_maxtrix();
