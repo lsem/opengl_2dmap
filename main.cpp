@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <cmath>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
@@ -39,6 +40,11 @@ std::ostream& operator<<(std::ostream& os, const glm::vec3& v) {
   os << glm::to_string(v);
   return os;
 }
+std::ostream& operator<<(std::ostream& os, const glm::vec4& v) {
+  os << glm::to_string(v);
+  return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const glm::vec2& v) {
   os << glm::to_string(v);
   return os;
@@ -59,17 +65,26 @@ struct Cam2d {
   Cam2d(IDisplayManager* dm, glm::vec2 focus_pos, float zoom)
       : dm{dm}, focus_pos{focus_pos}, zoom{zoom} {}
 
+  // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
-    auto left = this->focus_pos[0] - this->dm->window_size_x() / 2.f;
-    auto right = this->focus_pos[0] + this->dm->window_size_x() / 2.f;
-    auto top = this->focus_pos[1] - this->dm->window_size_y() / 2.f;
-    auto bottom = this->focus_pos[1] + this->dm->window_size_y() / 2.f;
-    auto orto_m = glm::ortho(left, right, bottom, top);
+    auto project_m = glm::ortho(0.0f, (float)this->dm->window_size_x(),
+                             (float)this->dm->window_size_y(), 0.0f);
 
-    glm::mat4 zoom_m = glm::scale(glm::mat4{1.0f}, glm::vec3{this->zoom});
-    glm::mat4 rot_m = glm::rotate(glm::mat4{1.0f}, this->rotation,
+    glm::mat4 trans_m = glm::translate(
+        glm::mat4{1.0f},
+        glm::vec3{-focus_pos[0] + this->dm->window_size_x() / 2.f,
+                  -focus_pos[1] + this->dm->window_size_y() / 2.f, 0.0});
+    glm::mat4 rot_m = glm::rotate(glm::mat4{1.0f}, this->rotation * 0.0f,
                                   glm::vec3{0.0f, 0.0f, 1.0f});
-    return zoom_m * rot_m * orto_m;
+    glm::mat4 scale_m = glm::scale(glm::mat4{1.0f}, glm::vec3{this->zoom});
+
+    return project_m * scale_m * rot_m * trans_m;
+  }
+
+  glm::vec2 unproject(glm::vec2 p) const {
+    auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
+    auto clip_p = glm::vec4{p[0] / w * 2.0 - 1.0, p[1] / h * 2.0 - 1.0, 0.0, 1.0};
+    return glm::inverse(projection_maxtrix()) * clip_p;
   }
 };
 
@@ -234,7 +249,7 @@ int main() {
   }
 
   DisplayManager dm{g_window_width, g_window_height};
-  cameras::Cam2d cam{&dm, glm::vec2{100.0, 200.0}, 1.0};
+  cameras::Cam2d cam{&dm, glm::vec2{0.0, 0.0}, 1.0};
   PanningState panning_state;
 
   glfwMakeContextCurrent(window);
@@ -273,8 +288,25 @@ int main() {
         }
       });
   GLFWMouseController::set_mouse_scroll_callback(
-      [&cam](GLFWwindow* wnd, double xoffset, double yoffset) {
-        cam.zoom += yoffset * 0.1;
+      [&cam, &panning_state](GLFWwindow* wnd, double xoffset, double yoffset) {
+        // We want to have scrolling around mouse position. In order
+        // to achieve such effect we need to keep invariant that world
+        // coordinates of mouse position not changed after zooming.
+        double cx, cy;
+        glfwGetCursorPos(wnd, &cx, &cy);
+        auto mouse_pos_world = cam.unproject(glm::vec2{cx, cy});
+
+        cam.zoom = cam.zoom + yoffset * 0.1;
+
+        auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
+        auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
+        cam.focus_pos -= diff;
+
+#ifndef NDEBUG
+        auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
+        assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
+        std::cout << "zoom-around-loc: sanity test passed\n";
+#endif
       });
   // ------------------------------------------------------------------------
 
@@ -425,12 +457,8 @@ int main() {
   }
   cx /= 3.0, cy /= 3.0;
 
-  auto cos_t = std::cos(glfwGetTime());
-  // cam.focus_pos = glm::vec2{cx + std::cos(glfwGetTime() / 3) *
-  // g_window_width / 2, cy};
   cam.focus_pos = glm::vec2{cx, cy};
-  // cam.zoom = std::fabs(std::cos(glfwGetTime())) * 2.5;
-  // cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
+  cam.zoom = 1.0;
 
   while (!glfwWindowShouldClose(window)) {
     _update_fps_counter(window);
@@ -446,6 +474,8 @@ int main() {
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
       }
     }
+
+      cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
 
     glUseProgram(shaderProgram2);
     auto proj = cam.projection_maxtrix();
