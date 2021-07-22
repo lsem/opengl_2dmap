@@ -11,6 +11,7 @@
 #include <iostream>
 #include <limits>
 #include "gg.h"
+#include "glfw_helpers.h"
 
 using namespace std;
 
@@ -61,6 +62,7 @@ struct Cam2d {
   glm::vec2 focus_pos;
   float zoom;
   float rotation;
+  glm::vec2 zoom_pos;
 
   Cam2d(IDisplayManager* dm, glm::vec2 focus_pos, float zoom)
       : dm{dm}, focus_pos{focus_pos}, zoom{zoom} {}
@@ -68,22 +70,26 @@ struct Cam2d {
   // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
     auto project_m = glm::ortho(0.0f, (float)this->dm->window_size_x(),
-                             (float)this->dm->window_size_y(), 0.0f);
+                                (float)this->dm->window_size_y(), 0.0f);
 
-    glm::mat4 trans_m = glm::translate(
-        glm::mat4{1.0f},
-        glm::vec3{-focus_pos[0] + this->dm->window_size_x() / 2.f,
-                  -focus_pos[1] + this->dm->window_size_y() / 2.f, 0.0});
-    glm::mat4 rot_m = glm::rotate(glm::mat4{1.0f}, this->rotation * 0.0f,
-                                  glm::vec3{0.0f, 0.0f, 1.0f});
-    glm::mat4 scale_m = glm::scale(glm::mat4{1.0f}, glm::vec3{this->zoom});
+    auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
 
-    return project_m * scale_m * rot_m * trans_m;
+    // now suppose we want to have a zoom relative to point P
+    glm::vec2 P{focus_pos[0] - 100, focus_pos[1] - 100};
+
+    glm::mat4 transform{1.0f};
+    transform = glm::translate(transform, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
+    transform = glm::rotate(transform, this->rotation /* glm::radians(50.0f)*/, glm::vec3{0.0f, 0.0f, -1.0f});  // 3-rd
+    transform = glm::scale(transform, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
+    transform = glm::translate(transform, glm::vec3{-focus_pos[0], -focus_pos[1], 0.0f});  // 1-st
+
+    return project_m * transform;
   }
 
   glm::vec2 unproject(glm::vec2 p) const {
     auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
-    auto clip_p = glm::vec4{p[0] / w * 2.0 - 1.0, p[1] / h * 2.0 - 1.0, 0.0, 1.0};
+    auto clip_p =
+        glm::vec4{p[0] / w * 2.0 - 1.0, p[1] / h * 2.0 - 1.0, 0.0, 1.0};
     return glm::inverse(projection_maxtrix()) * clip_p;
   }
 };
@@ -173,54 +179,6 @@ struct PanningState {
   int prev_x = 0, prev_y = 0;
 };
 
-// Class needed to be able to use closures as callbacks.
-struct GLFWMouseController {
-  // using Self = GLFWMouseController;
-  using mouse_button_cb_t =
-      std::function<void(GLFWwindow* wnd, int btn, int act, int mods)>;
-  using mouse_scroll_cb_t =
-      std::function<void(GLFWwindow* wnd, double xoffset, double yoffset)>;
-  using mouse_move_cb_t =
-      std::function<void(GLFWwindow* wnd, double xpos, double ypos)>;
-
-  inline static mouse_button_cb_t btn_cb;
-  inline static mouse_scroll_cb_t scroll_cb;
-  inline static mouse_move_cb_t move_cb;
-
-  static void set_mouse_button_callback(mouse_button_cb_t cb) {
-    GLFWMouseController::btn_cb = std::move(cb);
-  }
-  static void set_mouse_scroll_callback(mouse_scroll_cb_t cb) {
-    GLFWMouseController::scroll_cb = std::move(cb);
-  }
-  static void set_mouse_move_callback(mouse_move_cb_t cb) {
-    GLFWMouseController::move_cb = std::move(cb);
-  }
-
-  static void mouse_move_callback(GLFWwindow* wnd, double xpos, double ypos) {
-    if (move_cb) {
-      move_cb(wnd, xpos, ypos);
-    }
-  }
-
-  static void mouse_scroll_callback(GLFWwindow* wnd,
-                                    double xoffset,
-                                    double yoffset) {
-    if (scroll_cb) {
-      scroll_cb(wnd, xoffset, yoffset);
-    }
-  }
-
-  static void mouse_button_callback(GLFWwindow* wnd,
-                                    int btn,
-                                    int act,
-                                    int mods) {
-    if (btn_cb) {
-      btn_cb(wnd, btn, act, mods);
-    }
-  }
-};
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
   g_window_width = width;
   g_window_height = height;
@@ -259,11 +217,13 @@ int main() {
   // Mouse control:
   //  press left mouse button and move left/right to pan window.
   //  press CTRL and use cursor to move around center.
-  glfwSetCursorPosCallback(window, &GLFWMouseController::mouse_move_callback);
-  glfwSetScrollCallback(window, &GLFWMouseController::mouse_scroll_callback);
-  glfwSetMouseButtonCallback(window,
-                             &GLFWMouseController::mouse_button_callback);
-  GLFWMouseController::set_mouse_move_callback(
+  glfwSetCursorPosCallback(
+      window, &glfw_helpers::GLFWMouseController::mouse_move_callback);
+  glfwSetScrollCallback(
+      window, &glfw_helpers::GLFWMouseController::mouse_scroll_callback);
+  glfwSetMouseButtonCallback(
+      window, &glfw_helpers::GLFWMouseController::mouse_button_callback);
+  glfw_helpers::GLFWMouseController::set_mouse_move_callback(
       [&panning_state, &cam](auto* wnd, double xpos, double ypos) {
         if (panning_state.panning) {
           if (panning_state.prev_x == 0 && panning_state.prev_y == 0) {
@@ -274,10 +234,11 @@ int main() {
           auto dy = ypos - panning_state.prev_y;
           panning_state.prev_x = xpos;
           panning_state.prev_y = ypos;
+          // todo: fix that, rotation not working.
           cam.focus_pos += glm::vec2{-dx / cam.zoom, -dy / cam.zoom};
         }
       });
-  GLFWMouseController::set_mouse_button_callback(
+  glfw_helpers::GLFWMouseController::set_mouse_button_callback(
       [&panning_state](GLFWwindow* wnd, int btn, int act, int mods) {
         if (act == GLFW_PRESS && btn == GLFW_MOUSE_BUTTON_LEFT) {
           panning_state.panning = true;
@@ -287,7 +248,7 @@ int main() {
           panning_state.prev_y = 0;
         }
       });
-  GLFWMouseController::set_mouse_scroll_callback(
+  glfw_helpers::GLFWMouseController::set_mouse_scroll_callback(
       [&cam, &panning_state](GLFWwindow* wnd, double xoffset, double yoffset) {
         // We want to have scrolling around mouse position. In order
         // to achieve such effect we need to keep invariant that world
@@ -296,16 +257,21 @@ int main() {
         glfwGetCursorPos(wnd, &cx, &cy);
         auto mouse_pos_world = cam.unproject(glm::vec2{cx, cy});
 
-        cam.zoom = cam.zoom + yoffset * 0.1;
+        std::cout << "mouse_pos_world: " << mouse_pos_world << std::endl;
+        cam.zoom_pos = mouse_pos_world;
 
-        auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
-        auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
-        cam.focus_pos -= diff;
+        //cam.zoom = cam.zoom + yoffset * 0.1;
+
+        // auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
+        // auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
+        // cam.focus_pos -= diff;
+
+        //cam.zoom_pos = glm::vec2{cx, cy};
 
 #ifndef NDEBUG
-        auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
-        assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
-        std::cout << "zoom-around-loc: sanity test passed\n";
+        // auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
+        // assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
+        // std::cout << "zoom-around-loc: sanity test passed\n";
 #endif
       });
   // ------------------------------------------------------------------------
@@ -475,7 +441,7 @@ int main() {
       }
     }
 
-      cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
+    cam.rotation = std::cos(glfwGetTime()) * 2 * M_PI / 3;
 
     glUseProgram(shaderProgram2);
     auto proj = cam.projection_maxtrix();
