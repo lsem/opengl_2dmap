@@ -55,42 +55,168 @@ std::ostream& operator<<(std::ostream& os, const glm::mat4& m) {
   return os;
 }
 
+struct Line {
+  vector<float> geometry{-0.5f, -0.5f, 0.5f, 0.5f};
+  // vector<float> geometry{0.5f, 0.5f, 0.0f,  0.5f, -0.5f, 0.0f, -0.5f, 0.5f,
+  // 0.0f};
+  glm::mat4 view_projection_matrix = glm::mat4{1.0f};
+  int shader_program = -1;
+  unsigned vao = -1, vbo = -1;
+  glm::vec2 a, b;
+
+  void create_buffers() {
+    glGenVertexArrays(1, &this->vao);
+    glGenBuffers(1, &this->vbo);
+    glBindVertexArray(this->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, this->vbo);
+    glBufferData(GL_ARRAY_BUFFER, geometry.size() * sizeof(geometry[0]), NULL,
+                 GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 2,
+                          (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
+    glBindVertexArray(0);              // unbind
+  }
+
+  // Supposed to be uploaded on every frame.
+  void reupload_geometry() {
+    if (vao == -1) {
+      create_buffers();
+    }
+    assert(vao != -1);
+    // todo: can I use stack here or data should be alive?
+    this->geometry[0] = this->a.x;
+    this->geometry[1] = this->a.y;
+    this->geometry[2] = this->b.x;
+    this->geometry[3] = this->b.y;
+
+    unsigned vbo;
+    glBindBuffer(GL_ARRAY_BUFFER, this->vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, geometry.size() * sizeof(geometry[0]),
+                    &this->geometry[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
+  }
+
+  void render() {
+    reupload_geometry();
+    glUseProgram(this->shader_program);
+    glUniformMatrix4fv(glGetUniformLocation(this->shader_program, "proj"), 1,
+                       GL_FALSE, glm::value_ptr(this->view_projection_matrix));
+    glBindVertexArray(this->vao);
+    glDrawArrays(GL_LINES, 0, 2);
+  }
+
+  const char* vertex_shader() const {
+    return R"shader(
+      #version 330 core
+      layout (location = 0) in vec2 aPos;
+
+      uniform mat4 proj;
+
+      void main()
+      {
+        gl_Position = proj * vec4(aPos.x, aPos.y, 0.0, 1.0);
+      }
+    )shader";
+  }
+
+  const char* fragment_shader() const {
+    return R"shader(
+      #version 330 core
+      out vec4 FragColor;
+
+      void main()
+      {
+          FragColor = vec4(0.0, 0.0, 0.0, 1.0f);
+      }
+    )shader";
+  }
+
+  // set line coords in world space
+  void set_line_coords(glm::vec2 a, glm::vec2 b) {
+    this->a = a;
+    this->b = b;
+  }
+
+  void set_view_projection_matrix(glm::mat4 m) {
+    this->view_projection_matrix = m;
+  }
+
+  // loads and compiles shaders.
+  bool load_shaders() {
+    const char* v_shader_src = vertex_shader();
+    const char* f_shader_src = fragment_shader();
+
+    auto v_shader_id = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(v_shader_id, 1, &v_shader_src, NULL);
+    glCompileShader(v_shader_id);
+    int result;
+    char err_msg[512];
+    glGetShaderiv(v_shader_id, GL_COMPILE_STATUS, &result);
+    if (!result) {
+      glGetShaderInfoLog(v_shader_id, 512, NULL, err_msg);
+      std::cerr << "ERROR: Line: vertex shader compilation failed:\n"
+                << err_msg << std::endl;
+      return false;
+    }
+    unsigned f_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(f_shader_id, 1, &f_shader_src, NULL);
+    glCompileShader(f_shader_id);
+    glGetShaderiv(f_shader_id, GL_COMPILE_STATUS, &result);
+    if (!result) {
+      glGetShaderInfoLog(f_shader_id, 512, NULL, err_msg);
+      std::cerr << "ERROR: Line: fragment shader compilation failed:\n"
+                << err_msg << std::endl;
+      return false;
+    }
+    this->shader_program = glCreateProgram();
+    glAttachShader(this->shader_program, v_shader_id);
+    glAttachShader(this->shader_program, f_shader_id);
+    glLinkProgram(this->shader_program);
+    glGetProgramiv(this->shader_program, GL_LINK_STATUS, &result);
+    if (!result) {
+      glGetProgramInfoLog(this->shader_program, 512, NULL, err_msg);
+      std::cout << "ERROR: line shaders link failed:\n" << err_msg << std::endl;
+      return false;
+    }
+    glDeleteShader(v_shader_id);
+    glDeleteShader(f_shader_id);
+
+    return true;
+  }
+};
+
 namespace cameras {
 
 struct Cam2d {
-  IDisplayManager* dm;
+  glm::vec2 window_size;
   glm::vec2 focus_pos;
-  float zoom;
-  float rotation;
+  float zoom = 1.0;
+  float rotation = 0.0;
   glm::vec2 zoom_pos;
-
-  Cam2d(IDisplayManager* dm, glm::vec2 focus_pos, float zoom)
-      : dm{dm}, focus_pos{focus_pos}, zoom{zoom} {}
 
   // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
-    float w = this->dm->window_size_x(), h = this->dm->window_size_y();
-
+    float w = this->window_size.x, h = this->window_size.y;
     auto project_m = glm::ortho(0.0f, w, h, 0.0f);
 
+#if 1
     glm::mat4 view{1.0f};
     view = glm::translate(view, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
-    view = glm::rotate(view, this->rotation /* glm::radians(50.0f)*/,
+    view = glm::rotate(view, this->rotation,
                        glm::vec3{0.0f, 0.0f, -1.0f});                 // 3-rd
     view = glm::scale(view, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
-    view = glm::translate(
-        view, glm::vec3{-focus_pos[0], -focus_pos[1], 0.0f});  // 1-st
-
-    // next question? how to return back zooming around location?
-#if 0
-    auto rotation_matrix = glm::rotate(glm::mat4{1.0f}, this->rotation, glm::vec3{.0f, .0f, -1.0f});
+    view = glm::translate(view, glm::vec3{-focus_pos, 0.0f});         // 1-st
+#else
+    auto rotation_matrix = glm::rotate(glm::mat4{1.0f}, this->rotation,
+                                       glm::vec3{.0f, .0f, -1.0f});
     glm::vec4 rotated_vec = rotation_matrix * glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
 
     auto e_focus_pos = focus_pos + glm::vec2{-300.0f, -300.f};
 
     glm::vec3 cam_front = glm::vec3{.0f, .0f, -1.0f};
     glm::vec3 cam_up = glm::vec3{rotated_vec.x, rotated_vec.y, rotated_vec.z};
-    //glm::vec3 cam_up = glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
+    // glm::vec3 cam_up = glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
     glm::mat4 view = glm::lookAt(
         glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f},
         cam_front + glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f}, cam_up);
@@ -99,7 +225,7 @@ struct Cam2d {
   }
 
   glm::vec2 unproject(glm::vec2 p) const {
-    auto w = this->dm->window_size_x(), h = this->dm->window_size_y();
+    float w = this->window_size.x, h = this->window_size.y;
     auto clip_p = glm::vec4{
         p[0] / w * 2.0 - 1.0,
         (p[1] / h * 2.0 - 1.0) * -1.0,  // *-1 because we have y flipped
@@ -156,6 +282,7 @@ const char* exp_vertex_shader = R"shader(
 		    gl_Position = proj * vec4(aPos.x, aPos.y, aPos.z, 1.0);
 		}
 )shader";
+
 const char* exp_fragment_shader = R"shader(
 		#version 330 core
 		in float color;
@@ -189,9 +316,59 @@ const char* crosshair_fshader = R"shader(
 
 unsigned g_window_width, g_window_height;
 
-struct PanningState {
+// Simple camera control for desktop applications supporting zooming around
+// mouse center, rotation around desktop center and simple panning.
+// todo: kinematic panning.
+// todo: refactor to have just methods like (on_mouse_move(), on_mouse_click(),
+// on_mouse_scroll).
+struct CameraControl {
   bool panning = false;
   int prev_x = 0, prev_y = 0;  // use int to be able to compare with 0.
+  bool rotation = false;
+  double rotation_start =
+      0.0;  // camera rotation at the moment when rotation started.
+  glm::vec2 rot_start_point, rot_curr_point;
+  glm::vec2 screen_center;
+
+  // Facilities to visualize current state of camera control state.
+  struct VisualDebug {
+    Line rot_start_vector_line, rot_end_vector_line;
+  } vis_dbg;
+
+  bool show_vis_dbg = false;
+
+  bool init_render() {
+    if (!this->vis_dbg.rot_start_vector_line.load_shaders()) {
+      std::cerr << "error: failed loading shaders for 1-st line\n";
+      return false;
+    }
+    if (!this->vis_dbg.rot_end_vector_line.load_shaders()) {
+      std::cerr << "error: failed loading shaders for 2-nd line\n";
+      return false;
+    }
+    return true;
+  }
+
+  // todo: idea: should we take something like rendeing_ctx just to give a hint
+  // that this method uses opengl rendering context?
+  void render_vis_dbg_if_enabled(cameras::Cam2d& cam) {
+    if (rotation) {
+      this->vis_dbg.rot_start_vector_line.set_line_coords(
+          cam.unproject(this->screen_center),
+          cam.unproject(this->rot_start_point));
+      this->vis_dbg.rot_start_vector_line.set_view_projection_matrix(
+          cam.projection_maxtrix());
+      this->vis_dbg.rot_start_vector_line.render();
+      this->vis_dbg.rot_end_vector_line.set_line_coords(
+          cam.unproject(this->screen_center),
+          cam.unproject(this->rot_curr_point));
+      this->vis_dbg.rot_end_vector_line.set_view_projection_matrix(
+          cam.projection_maxtrix());
+      this->vis_dbg.rot_end_vector_line.render();
+    }
+  }
+
+  void set_show_vis_dbg(bool v) { this->show_vis_dbg = v; }
 };
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
@@ -221,9 +398,10 @@ int main() {
     return -1;
   }
 
-  DisplayManager dm{g_window_width, g_window_height};
-  cameras::Cam2d cam{&dm, glm::vec2{0.0, 0.0}, 1.0};
-  PanningState panning_state;
+  // DisplayManager dm{g_window_width, g_window_height};
+  cameras::Cam2d cam;
+  cam.window_size = glm::vec2{g_window_width, g_window_height};
+  CameraControl cam_control;
 
   glfwMakeContextCurrent(window);
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -239,50 +417,82 @@ int main() {
   glfwSetMouseButtonCallback(
       window, &glfw_helpers::GLFWMouseController::mouse_button_callback);
   glfw_helpers::GLFWMouseController::set_mouse_move_callback(
-      [&panning_state, &cam](auto* wnd, double xpos, double ypos) {
-        if (panning_state.panning) {
-          if (panning_state.prev_x == 0.0 && panning_state.prev_y == 0.0) {
-            panning_state.prev_x = xpos;
-            panning_state.prev_y = ypos;
+      [&cam_control, &cam](auto* wnd, double xpos, double ypos) {
+        if (cam_control.panning) {
+          if (cam_control.prev_x == 0.0 && cam_control.prev_y == 0.0) {
+            cam_control.prev_x = xpos;
+            cam_control.prev_y = ypos;
           }
-
-          auto prev_u = cam.unproject(
-              glm::vec2{panning_state.prev_x, panning_state.prev_y});
+          // todo: we can just save prev already unprojected.
+          auto prev_u =
+              cam.unproject(glm::vec2{cam_control.prev_x, cam_control.prev_y});
           auto curr_u = cam.unproject(glm::vec2{xpos, ypos});
           cam.focus_pos -= curr_u - prev_u;
 
-          panning_state.prev_x = xpos;
-          panning_state.prev_y = ypos;
+          cam_control.prev_x = xpos;
+          cam_control.prev_y = ypos;
+        } else if (cam_control.rotation) {
+          cam_control.rot_curr_point = glm::vec2{xpos, ypos};
+          // angle between these start and current vectors is our rotation.
+          auto A = glm::normalize(cam_control.rot_start_point -
+                                  cam_control.screen_center);
+          auto B = glm::normalize(cam_control.rot_curr_point -
+                                  cam_control.screen_center);
+          auto angle =
+              std::acos(glm::dot(glm::normalize(A), glm::normalize(B)));
+          // now we need to find out the sign
+          auto Vn = glm::vec3{0.0f, 0.0f, 1.0f};
+          auto crossAB = glm::cross(glm::vec3{A, 0.0}, glm::vec3{B, 0.0});
+          auto signV = glm::dot(Vn, crossAB);
+          if (signV < 0) {
+            angle *= -1;
+          }
+          cam.rotation = cam_control.rotation_start + angle;
         }
       });
   glfw_helpers::GLFWMouseController::set_mouse_button_callback(
-      [&panning_state](GLFWwindow* wnd, int btn, int act, int mods) {
+      [&cam_control, &cam](GLFWwindow* wnd, int btn, int act, int mods) {
         if (act == GLFW_PRESS && btn == GLFW_MOUSE_BUTTON_LEFT) {
-          panning_state.panning = true;
+          if (mods == GLFW_MOD_SHIFT) {
+            double cx, cy;
+            glfwGetCursorPos(wnd, &cx, &cy);
+            cam_control.rotation = true;
+            cam_control.rotation_start = cam.rotation;
+            // we want to have this vectors used for calculation rotation in
+            // screen space because after changing rotation they would be
+            // invalidated.
+            cam_control.rot_start_point = glm::vec2{cx, cy};
+            cam_control.rot_curr_point = cam_control.rot_start_point;
+            cam_control.screen_center = cam.window_size / 2.0f;  // pivot point?
+          } else {
+            // todo: start position can be captured here
+            cam_control.panning = true;
+          }
         } else if (act == GLFW_RELEASE && btn == GLFW_MOUSE_BUTTON_LEFT) {
-          panning_state.panning = false;
-          panning_state.prev_x = 0;
-          panning_state.prev_y = 0;
+          if (cam_control.rotation) {
+            cam_control.rotation = false;
+            // todo: reset rest of the state just for hygyene purposes.
+          } else if (cam_control.panning) {
+            cam_control.panning = false;
+            cam_control.prev_x = 0;
+            cam_control.prev_y = 0;
+          }
         }
       });
   glfw_helpers::GLFWMouseController::set_mouse_scroll_callback(
-      [&cam, &panning_state](GLFWwindow* wnd, double xoffset, double yoffset) {
+      [&cam, &cam_control](GLFWwindow* wnd, double xoffset, double yoffset) {
+        // todo: limit zoom values.
         // We want to have scrolling around mouse position. In order
         // to achieve such effect we need to keep invariant that world
         // coordinates of mouse position not changed after zooming.
         double cx, cy;
         glfwGetCursorPos(wnd, &cx, &cy);
         auto mouse_pos_world = cam.unproject(glm::vec2{cx, cy});
-
-        std::cout << "mouse_pos_world: " << mouse_pos_world << std::endl;
         cam.zoom_pos = mouse_pos_world;
-
         cam.zoom = cam.zoom + yoffset * 0.1;
-
         auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
         auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
         cam.focus_pos -= diff;
-
         cam.zoom_pos = glm::vec2{cx, cy};
 
 #ifndef NDEBUG
@@ -443,6 +653,11 @@ int main() {
   cam.focus_pos = glm::vec2{cx, cy};
   cam.zoom = 1.0;
 
+  if (!cam_control.init_render()) {
+    glfwTerminate();
+    return -1;
+  }
+
   while (!glfwWindowShouldClose(window)) {
     _update_fps_counter(window);
     processInput(window);
@@ -456,10 +671,7 @@ int main() {
       } else {
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
       }
-    }
-
-    cam.rotation = std::cos(glfwGetTime() / 4) * 2 * M_PI / 3;
-    // cam.rotation = glm::radians(45.0f);
+    };
 
     glUseProgram(shaderProgram2);
     auto proj = cam.projection_maxtrix();
@@ -469,14 +681,19 @@ int main() {
     glBindVertexArray(experimental_vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    if (g_show_crosshair) {
+    if (g_show_crosshair || cam_control.rotation) {
       glUseProgram(crosshair_shader_prog);
       glBindVertexArray(crosshair_vao);
       glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
+    cam_control.render_vis_dbg_if_enabled(cam);
     glfwSwapBuffers(window);
     glfwPollEvents();
+    // in case window size has changed, make camera aware of it.
+    // this should have been done in framebuffer callback but I cannot
+    // capture camera into plain C function.
+    cam.window_size = glm::vec2{g_window_width, g_window_height};
   }
 
   glfwDestroyWindow(window);
