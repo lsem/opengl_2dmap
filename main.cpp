@@ -127,7 +127,7 @@ struct Line {
 
       void main()
       {
-          FragColor = vec4(0.0, 0.0, 0.0, 1.0f);
+          FragColor = vec4(0.7, 0.7, 0.7, 1.0f);
       }
     )shader";
   }
@@ -290,7 +290,7 @@ const char* exp_fragment_shader = R"shader(
 
 		void main()
 		{
-		    FragColor = vec4(1.0, 0.0, 0.0, 1.0f);
+		    FragColor = vec4(0.98, 0.8, 0.7, 1.0f);
 		}
 	)shader";
 
@@ -310,7 +310,7 @@ const char* crosshair_fshader = R"shader(
 
     void main()
     {
-        FragColor = vec4(1.0, 0.0, 0.0, 1.0f);
+        FragColor = vec4(8.0, 8.0, 8.0, 1.0f);
     }
   )shader";
 
@@ -589,7 +589,7 @@ int main() {
       -0.5f, 0.5f, 0.0f    // top left
   };
   for (auto& x : crosshair_vertices) {
-    x *= 0.02;
+    x *= 0.01;
   }
   // Vertex crosshair_point = {0.0, 0.5, 0.0f, 1.0f};
   unsigned crosshair_vao, crosshair_vbo;
@@ -681,7 +681,7 @@ int main() {
     glBindVertexArray(experimental_vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    if (g_show_crosshair || cam_control.rotation) {
+    if (g_show_crosshair) {
       glUseProgram(crosshair_shader_prog);
       glBindVertexArray(crosshair_vao);
       glDrawArrays(GL_TRIANGLES, 0, 6);
