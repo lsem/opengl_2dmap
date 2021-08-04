@@ -1,15 +1,18 @@
 #include <glm/glm.hpp>
+
 #include "glad/glad.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+
 #include <cmath>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
 #include <iostream>
 #include <limits>
+
 #include "gg.h"
 #include "glfw_helpers.h"
 
@@ -22,20 +25,8 @@ bool g_show_crosshair = false;
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
 
-struct IDisplayManager {
-  virtual ~IDisplayManager() = default;
-  virtual unsigned window_size_x() = 0;
-  virtual unsigned window_size_y() = 0;
-};
-
-struct DisplayManager : public IDisplayManager {
-  unsigned& w_ref;
-  unsigned& h_ref;
-  DisplayManager(unsigned& w_ref, unsigned& h_ref)
-      : w_ref{w_ref}, h_ref{h_ref} {}
-  virtual unsigned window_size_x() { return this->w_ref; }
-  virtual unsigned window_size_y() { return this->h_ref; }
-};
+using p32 = gg::p32;
+using v2 = gg::v2;
 
 std::ostream& operator<<(std::ostream& os, const glm::vec3& v) {
   os << glm::to_string(v);
@@ -55,19 +46,99 @@ std::ostream& operator<<(std::ostream& os, const glm::mat4& m) {
   return os;
 }
 
-struct Line {
-  vector<float> geometry{-0.5f, -0.5f, 0.5f, 0.5f};
-  // vector<float> geometry{0.5f, 0.5f, 0.0f,  0.5f, -0.5f, 0.0f, -0.5f, 0.5f,
-  // 0.0f};
-  glm::mat4 view_projection_matrix = glm::mat4{1.0f};
+// // this method return geometry for triangles or triangle strips but not just
+// points.
+// // our shader is going to draw strips.
+// std::vector<p32> generate_road_renderer(const RoadModel& road) {
+//   // what does it mean to render a road?
+//   // it means to produce geometry compatible with some particular shader
+//   program.
+//   // this geometry will be taken by another program, that prepares data for
+//   shader
+//   // (transfers data to GPU buffers). So overall, we want to build all roads
+//   // at once.
+//   // todo: open question remains: should we draw projected things or not?
+// }
+
+v2 from_glmvec2(glm::vec2 v) { return v2{v.x, v.y}; }
+p32 from_v2(v2 v) {
+  return p32{static_cast<uint32_t>(v.x()), static_cast<uint32_t>(v.y())};
+}
+
+struct DbgContext;
+
+class RoadRenderer {
+ public:
+  // loads, compiles and links shaders.
+  bool prepare_shders();
+
+  void render() {
+    // use_shader();
+    // bind VBA
+    // draw triangles.
+  }
+
+  void add_road_geometry() {}
+
+  static std::vector<p32> generate_geometry(vector<p32> polyline,
+                                            DbgContext& ctx);
+};
+
+struct Color {
+  Color(float r, float g, float b) : r(r), g(g), b(b) {}
+  float r, g, b;
+};
+
+namespace colors {
+static Color green{0.0f, 1.0f, 0.0f};
+static Color red{1.0f, 0.0f, 0.0f};
+static Color blue{0.0f, 0.0f, 1.0f};
+static Color grey{0.7f, 0.7f, 0.7f};
+static Color magenta{1.0f, 0.0f, 1.0f};
+}  // namespace colors
+
+struct Lines {
+  explicit Lines(unsigned count) {
+    this->geometry.resize(count * 4);
+    this->colors.resize(count * 6);
+  }
+
+  using line_type = tuple<v2, v2, Color>;
+
+  void assign_lines(vector<line_type> lines) {
+    assert(this->geometry.size() == lines.size() * 4);
+    assert(this->colors.size() == lines.size() * 6);
+    this->geometry.clear();
+    this->colors.clear();
+    for (auto [a, b, color] : lines) {
+      this->geometry.push_back(a.x());
+      this->geometry.push_back(a.y());
+      this->geometry.push_back(b.x());
+      this->geometry.push_back(b.y());
+      // line has two vertex colored one way, no interpolation needed
+      this->colors.push_back(color.r);
+      this->colors.push_back(color.g);
+      this->colors.push_back(color.b);
+      this->colors.push_back(color.r);
+      this->colors.push_back(color.g);
+      this->colors.push_back(color.b);
+    }
+  }
+
+  vector<float> geometry;
+  vector<float> colors;
   int shader_program = -1;
-  unsigned vao = -1, vbo = -1;
-  glm::vec2 a, b;
+  unsigned vao = -1, vbo = -1, colors_vbo = -1;
 
   void create_buffers() {
+    // todo: what if I can add more data by putthing new data into separate
+    // vertex object and somehow record this info in VAO?
+    assert(vao == -1);
     glGenVertexArrays(1, &this->vao);
     glGenBuffers(1, &this->vbo);
+    glGenBuffers(1, &this->colors_vbo);
     glBindVertexArray(this->vao);
+
     glBindBuffer(GL_ARRAY_BUFFER, this->vbo);
     glBufferData(GL_ARRAY_BUFFER, geometry.size() * sizeof(geometry[0]), NULL,
                  GL_DYNAMIC_DRAW);
@@ -75,7 +146,17 @@ struct Line {
                           (void*)0);
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
-    glBindVertexArray(0);              // unbind
+
+    // color
+    glBindBuffer(GL_ARRAY_BUFFER, this->colors_vbo);
+    glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(colors[0]), NULL,
+                 GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3,
+                          (void*)0);
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
+
+    glBindVertexArray(0);  // unbind
   }
 
   // Supposed to be uploaded on every frame.
@@ -84,38 +165,42 @@ struct Line {
       create_buffers();
     }
     assert(vao != -1);
-    // todo: can I use stack here or data should be alive?
-    this->geometry[0] = this->a.x;
-    this->geometry[1] = this->a.y;
-    this->geometry[2] = this->b.x;
-    this->geometry[3] = this->b.y;
 
-    unsigned vbo;
     glBindBuffer(GL_ARRAY_BUFFER, this->vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, geometry.size() * sizeof(geometry[0]),
                     &this->geometry[0]);
     glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
+
+    glBindBuffer(GL_ARRAY_BUFFER, this->colors_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, colors.size() * sizeof(colors[0]),
+                    &this->colors[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);  // unbind
   }
 
-  void render() {
+  // todo: pass projection matrix as param.
+  void render(glm::mat4 projm) {
     reupload_geometry();
     glUseProgram(this->shader_program);
     glUniformMatrix4fv(glGetUniformLocation(this->shader_program, "proj"), 1,
-                       GL_FALSE, glm::value_ptr(this->view_projection_matrix));
+                       GL_FALSE, glm::value_ptr(projm));
     glBindVertexArray(this->vao);
-    glDrawArrays(GL_LINES, 0, 2);
+    glDrawArrays(GL_LINES, 0, geometry.size() / 2);
   }
 
   const char* vertex_shader() const {
     return R"shader(
       #version 330 core
       layout (location = 0) in vec2 aPos;
+      layout (location = 1) in vec3 aColor;
+
+      out vec3 myFragColor;
 
       uniform mat4 proj;
 
       void main()
       {
         gl_Position = proj * vec4(aPos.x, aPos.y, 0.0, 1.0);
+        myFragColor = aColor;
       }
     )shader";
   }
@@ -125,21 +210,13 @@ struct Line {
       #version 330 core
       out vec4 FragColor;
 
+      in vec3 myFragColor;
+
       void main()
       {
-          FragColor = vec4(0.7, 0.7, 0.7, 1.0f);
+          FragColor = vec4(myFragColor, 1.0f);
       }
     )shader";
-  }
-
-  // set line coords in world space
-  void set_line_coords(glm::vec2 a, glm::vec2 b) {
-    this->a = a;
-    this->b = b;
-  }
-
-  void set_view_projection_matrix(glm::mat4 m) {
-    this->view_projection_matrix = m;
   }
 
   // loads and compiles shaders.
@@ -186,6 +263,94 @@ struct Line {
   }
 };
 
+struct DbgContext {
+  std::vector<tuple<p32, p32, Color>> lines;
+  // if we add key then we can have layered structure with checkboxes in imgui.
+  void add_line(p32 a, p32 b, Color c) { this->lines.emplace_back(a, b, c); }
+};
+
+// todo: it seems like it is beneficial to have precalculated normal vectors
+// at map compile stage so that we have all needed points to build road from
+// triangles. it now costs three normalizations (sqrt), plus atan2.
+/*static*/
+
+// so this is going to generate vertexes particularly suited for drawing
+// via the same shader. In general this are vertices for this particular shader program.
+// which knows how to draw roads, use specified colors and make antialiasing.
+std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
+                                                 DbgContext& ctx) {
+  // to draw by two points, we need to have some special handling
+  // which I have not implemented yet.
+  assert(polyline.size() > 2);
+
+  // For each vertex of polyline find normalized vector that bisects angle
+  // between them, this would give us volume for road. tip: this probably
+  //
+  // ------------o e
+  //            / \
+  //p1 --------o p2\
+  //          / \   \
+  //---------/d  \   \
+  //         \    \   \
+  //          \    \p3 \
+
+  // todo: maybe we can get rid of this special case by putting two fake
+  // elements along the same lines?
+  v2 prev_d, prev_e;
+  v2 a{polyline[0], polyline[1]};
+  auto perp_a = normalized(v2{-a.y(), a.x()});
+  prev_d = v2{polyline[0]} + perp_a * 20.0;
+  prev_e = v2{polyline[0]} + (perp_a * -1) * 20.0;
+
+  int sign = 1;
+  for (size_t i = 2; i < polyline.size(); ++i) {
+    auto p1 = polyline[i - 2], p2 = polyline[i - 1], p3 = polyline[i];
+    v2 a{p2, p1}, b{p2, p3};
+    v2 d = normalized(normalized(a) + normalized(b)) * 20.0;
+    v2 e = d * -1;
+
+    // we want to have all d's on one side and e's on other side.
+    // if they have dot negative product than side has changed
+    // from previous iteration and we need to get it back.
+    if (dot(d, prev_d) < 0) {
+      std::swap(d, e);
+    }
+
+    std::cout << "dot(d, prev_d):" << dot(d, prev_d) << "\n";
+
+    v2 origin = p2;
+    //ctx.add_line(from_v2(origin), from_v2(origin + a), colors::green);
+    //ctx.add_line(from_v2(origin), from_v2(origin + b), colors::green);
+    //ctx.add_line(from_v2(origin), from_v2(origin + d), colors::blue);
+    //ctx.add_line(from_v2(origin), from_v2(origin + e), colors::red);
+
+    // if (i > 2) {
+    ctx.add_line(from_v2(prev_d), from_v2((origin + d)), colors::magenta);
+    ctx.add_line(from_v2((prev_e)), from_v2((origin + e)), colors::magenta);
+    //}
+
+    // todo: e and d are computed incorrectly here, to make it correct, use the following:
+    // https://cs.stackexchange.com/questions/127295/algorithm-for-intersection-point-between-two-vectors
+    // https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
+
+    prev_d = origin + d;
+    prev_e = origin + e;
+  }
+
+  { // todo: add fake ends to bot handle this ends.
+    v2 a{polyline[polyline.size() - 2], polyline[polyline.size() - 1]};
+    auto perp_a = normalized(v2{-a.y(), a.x()});
+    auto last_d = v2{polyline[polyline.size() - 1]} + perp_a * 20.0;
+    auto last_e = v2{polyline[polyline.size() - 1]} + (perp_a * -1) * 20.0;
+
+    auto origin = v2{polyline[polyline.size() - 1]};
+    ctx.add_line(from_v2(prev_d), from_v2((last_d)), colors::magenta);
+    ctx.add_line(from_v2((prev_e)), from_v2((last_e)), colors::magenta);
+  }
+
+  return {{}};
+}
+
 namespace cameras {
 
 struct Cam2d {
@@ -198,30 +363,17 @@ struct Cam2d {
   // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
     float w = this->window_size.x, h = this->window_size.y;
-    auto project_m = glm::ortho(0.0f, w, h, 0.0f);
+    auto projection_m = glm::ortho(0.0f, w, h, 0.0f);
 
-#if 1
-    glm::mat4 view{1.0f};
-    view = glm::translate(view, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
-    view = glm::rotate(view, this->rotation,
-                       glm::vec3{0.0f, 0.0f, -1.0f});                 // 3-rd
-    view = glm::scale(view, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
-    view = glm::translate(view, glm::vec3{-focus_pos, 0.0f});         // 1-st
-#else
-    auto rotation_matrix = glm::rotate(glm::mat4{1.0f}, this->rotation,
-                                       glm::vec3{.0f, .0f, -1.0f});
-    glm::vec4 rotated_vec = rotation_matrix * glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
-
-    auto e_focus_pos = focus_pos + glm::vec2{-300.0f, -300.f};
-
-    glm::vec3 cam_front = glm::vec3{.0f, .0f, -1.0f};
-    glm::vec3 cam_up = glm::vec3{rotated_vec.x, rotated_vec.y, rotated_vec.z};
-    // glm::vec3 cam_up = glm::vec4{.0f, 1.0f, 0.0f, 1.0f};
-    glm::mat4 view = glm::lookAt(
-        glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f},
-        cam_front + glm::vec3{e_focus_pos.x, e_focus_pos.y, 0.0f}, cam_up);
-#endif
-    return project_m * view;
+    glm::mat4 view_m{1.0f};
+    view_m =
+        glm::translate(view_m, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
+    view_m = glm::rotate(view_m, this->rotation,
+                         glm::vec3{0.0f, 0.0f, -1.0f});  // 3-rd
+    view_m =
+        glm::scale(view_m, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
+    view_m = glm::translate(view_m, glm::vec3{-focus_pos, 0.0f});    // 1-st
+    return projection_m * view_m;
   }
 
   glm::vec2 unproject(glm::vec2 p) const {
@@ -320,55 +472,16 @@ unsigned g_window_width, g_window_height;
 // mouse center, rotation around desktop center and simple panning.
 // todo: kinematic panning.
 // todo: refactor to have just methods like (on_mouse_move(), on_mouse_click(),
-// on_mouse_scroll).
+// on_mouse_scroll). Basically this class maps user inputs *(mouse and keyboard)
+// to camera control instructions (zoom/rotation/translations) it can even
+// not be aware about camera class after all.
 struct CameraControl {
   bool panning = false;
   int prev_x = 0, prev_y = 0;  // use int to be able to compare with 0.
   bool rotation = false;
   double rotation_start =
       0.0;  // camera rotation at the moment when rotation started.
-  glm::vec2 rot_start_point, rot_curr_point;
-  glm::vec2 screen_center;
-
-  // Facilities to visualize current state of camera control state.
-  struct VisualDebug {
-    Line rot_start_vector_line, rot_end_vector_line;
-  } vis_dbg;
-
-  bool show_vis_dbg = false;
-
-  bool init_render() {
-    if (!this->vis_dbg.rot_start_vector_line.load_shaders()) {
-      std::cerr << "error: failed loading shaders for 1-st line\n";
-      return false;
-    }
-    if (!this->vis_dbg.rot_end_vector_line.load_shaders()) {
-      std::cerr << "error: failed loading shaders for 2-nd line\n";
-      return false;
-    }
-    return true;
-  }
-
-  // todo: idea: should we take something like rendeing_ctx just to give a hint
-  // that this method uses opengl rendering context?
-  void render_vis_dbg_if_enabled(cameras::Cam2d& cam) {
-    if (rotation) {
-      this->vis_dbg.rot_start_vector_line.set_line_coords(
-          cam.unproject(this->screen_center),
-          cam.unproject(this->rot_start_point));
-      this->vis_dbg.rot_start_vector_line.set_view_projection_matrix(
-          cam.projection_maxtrix());
-      this->vis_dbg.rot_start_vector_line.render();
-      this->vis_dbg.rot_end_vector_line.set_line_coords(
-          cam.unproject(this->screen_center),
-          cam.unproject(this->rot_curr_point));
-      this->vis_dbg.rot_end_vector_line.set_view_projection_matrix(
-          cam.projection_maxtrix());
-      this->vis_dbg.rot_end_vector_line.render();
-    }
-  }
-
-  void set_show_vis_dbg(bool v) { this->show_vis_dbg = v; }
+  glm::vec2 rot_start_point, rot_curr_point, screen_center;
 };
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
@@ -379,6 +492,34 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
   // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
 }
+
+// Helper to display cam control internal stuff.
+struct CamControlVis {
+  Lines lines{2};
+
+  bool init_render() {
+    if (!this->lines.load_shaders()) {
+      std::cerr << "error: failed loading shaders for 1-st line\n";
+      return false;
+    }
+    return true;
+  }
+
+  // todo: idea: should we take something like rendeing_ctx just to give a
+  // hint that this method uses opengl rendering context?
+  void render(cameras::Cam2d& cam, CameraControl& cam_control) {
+    if (cam_control.rotation) {
+      this->lines.assign_lines(
+          {{from_glmvec2(cam.unproject(cam_control.screen_center)),
+            from_glmvec2(cam.unproject(cam_control.rot_start_point)),
+            colors::grey},
+           {from_glmvec2(cam.unproject(cam_control.screen_center)),
+            from_glmvec2(cam.unproject(cam_control.rot_curr_point)),
+            colors::grey}});
+      this->lines.render(cam.projection_maxtrix());
+    }
+  }
+};
 
 int main() {
   if (!glfwInit()) {
@@ -398,7 +539,6 @@ int main() {
     return -1;
   }
 
-  // DisplayManager dm{g_window_width, g_window_height};
   cameras::Cam2d cam;
   cam.window_size = glm::vec2{g_window_width, g_window_height};
   CameraControl cam_control;
@@ -438,9 +578,10 @@ int main() {
                                   cam_control.screen_center);
           auto B = glm::normalize(cam_control.rot_curr_point -
                                   cam_control.screen_center);
+          // todo: (separate commit) why I'm not using atan2?:
+          // atan2(A[1], A[0]) - atan2(B[1], B[0]);
           auto angle =
               std::acos(glm::dot(glm::normalize(A), glm::normalize(B)));
-          // now we need to find out the sign
           auto Vn = glm::vec3{0.0f, 0.0f, 1.0f};
           auto crossAB = glm::cross(glm::vec3{A, 0.0}, glm::vec3{B, 0.0});
           auto signV = glm::dot(Vn, crossAB);
@@ -653,10 +794,47 @@ int main() {
   cam.focus_pos = glm::vec2{cx, cy};
   cam.zoom = 1.0;
 
-  if (!cam_control.init_render()) {
+  CamControlVis cam_control_vis;
+  if (!cam_control_vis.init_render()) {
     glfwTerminate();
     return -1;
   }
+
+  DbgContext dctx;
+
+  {
+    v2 origin = v2{10000.0, 20000.0} + v2{200.0, 200.0};
+    auto p1 = from_v2(origin + v2{0.0, 0.0});
+    auto p2 = from_v2(origin + v2{100.0, 100.0});
+    auto p3 = from_v2(origin + v2{200.0, 80.0});
+    auto p4 = from_v2(origin + v2{300.0, 200.0});
+    auto p5 = from_v2(p4 + v2{350.0, 100.0});
+    auto p6 = from_v2(p5 + v2{400.0, 100.0});
+    auto p7 = from_v2(p6 + v2{30.0, -70.0});
+    RoadRenderer::generate_geometry({p1, p2, p3, p4, p5, p6, p7}, dctx);
+  }
+  {
+    v2 origin = v2{10000.0, 20000.0} + v2{1000.0, 1000.0};
+    auto p1 = from_v2(origin + v2{0.0, 0.0});
+    auto p2 = from_v2(p1 + v2{100.0, 0.0});
+    auto p3 = from_v2(p2 + v2{30, -100.0});
+
+    RoadRenderer::generate_geometry({p1, p2, p3}, dctx);
+  }
+  Lines road_dbg_lines{(unsigned)dctx.lines.size()};
+  if (!road_dbg_lines.load_shaders()) {
+    std::cerr << "failed initializing renderer for road_dbg_lines\n";
+    glfwTerminate();
+    return -1;
+  }
+
+  vector<tuple<v2, v2, Color>> lines_v2;
+  for (auto [a, b, c] : dctx.lines) {
+    // a,b: p32.
+    // std::cout << "a,b:" << a << "; " << b << "\n";
+    lines_v2.push_back(tuple{v2{a}, v2{b}, c});
+  }
+  road_dbg_lines.assign_lines(lines_v2);
 
   while (!glfwWindowShouldClose(window)) {
     _update_fps_counter(window);
@@ -687,7 +865,10 @@ int main() {
       glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    cam_control.render_vis_dbg_if_enabled(cam);
+    cam_control_vis.render(cam, cam_control);
+
+    road_dbg_lines.render(cam.projection_maxtrix());
+
     glfwSwapBuffers(window);
     glfwPollEvents();
     // in case window size has changed, make camera aware of it.
