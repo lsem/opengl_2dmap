@@ -19,6 +19,17 @@
 
 using namespace std;
 
+void log_warn_impl(fmt::string_view format, fmt::format_args args) {
+  auto style = fg(fmt::color::black) | bg(fmt::color::yellow);
+  std::cout << fmt::format(style, "warn: ") << fmt::vformat(style, format, args)
+            << "\n";
+}
+
+template <typename... Args>
+void log_warn(fmt::string_view format, Args... args) {
+  log_warn_impl(format, fmt::make_args_checked<Args...>(format, args...));
+}
+
 bool g_wireframe_mode = false;
 bool g_prev_wireframe_mode = false;
 bool g_show_crosshair = false;
@@ -292,6 +303,10 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
   // to draw by two points, we need to have some special handling
   // which I have not implemented yet.
   assert(polyline.size() > 2);
+  if (polyline.size() < 3) {
+    log_warn("line with less than 3 points");
+    return {{}};
+  }
 
   /*
    For each vertex of polyline find normalized vector that bisects angle
@@ -338,10 +353,7 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
     if (!gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d)) {
       // in this case we can can just skip the point,
       // this must be something wrong with compilation side of the map.
-      std::cout << fmt::format(fg(fmt::color::black) | bg(fmt::color::yellow),
-                               "warn: parallel lines at {},{},{}", i - 2, i - 1,
-                               i)
-                << "\n";
+      log_warn("parallel lines at {},{},{}", i - 2, i - 1, i);
       continue;
     }
 
@@ -672,7 +684,7 @@ int main() {
 #ifndef NDEBUG
         auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
         assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
-        std::cout << "zoom-around-loc: sanity test passed\n";
+        //std::cout << "zoom-around-loc: sanity test passed\n";
 #endif
       });
   // ------------------------------------------------------------------------
