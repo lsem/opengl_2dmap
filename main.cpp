@@ -316,17 +316,11 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
 #ifndef NDEBUG
     ctx.add_line(p1, p2, colors::black);  // original polyline
 #endif
-
-    // perpendiculars
-
     // t1, t2: perpendiculars to a and b
     v2 a{p1, p2};
     v2 b{p2, p3};
-    v2 t1{-a.y, a.x};
-    v2 t2{-b.y, b.x};
-
-    t1 = normalized(t1) * WIDTH;
-    t2 = normalized(t2) * WIDTH;
+    v2 t1 = normalized(v2{-a.y, a.x}) * WIDTH;
+    v2 t2 = normalized(v2{-b.y, b.x}) * WIDTH;
 
 #ifndef NDEBUG
     ctx.add_line(p1, p1 + t1, colors::grey);
@@ -338,7 +332,7 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
     ctx.add_line(p2, p2 + -t1, colors::grey);
     ctx.add_line(p2, p2 + -t2, colors::grey);
     ctx.add_line(p3, p3 + -t2, colors::grey);
-#endif // NDEBUG
+#endif  // NDEBUG
 
     v2 d;
     if (!gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d)) {
@@ -353,8 +347,9 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
 
     // find intersecion on other side
     v2 e;
-    bool intersect = gg::lines_intersection(p1 + -t1, p2 + -t1, p3 + -t2, p2 + -t2, e);
-    assert(intersect); // we already checked this on main side.
+    bool intersect =
+        gg::lines_intersection(p1 + -t1, p2 + -t1, p3 + -t2, p2 + -t2, e);
+    assert(intersect);  // we already checked this on main side.
 
     if (i == 2) {  // first iteration
       prev_d = p1 + t1;
@@ -366,7 +361,7 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
     ctx.add_line(p2, e, colors::green);
     ctx.add_line(prev_d, d, colors::blue);
     ctx.add_line(prev_e, e, colors::blue);
-#endif // NDEBUG
+#endif  // NDEBUG
 
     prev_d = d;
     prev_e = e;
@@ -384,7 +379,7 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
   ctx.add_line(p1, p2, colors::black);  // original polyline
   ctx.add_line(prev_d, d, colors::blue);
   ctx.add_line(prev_e, e, colors::blue);
-#endif // NDEBUG
+#endif  // NDEBUG
 
   return {{}};
 }
