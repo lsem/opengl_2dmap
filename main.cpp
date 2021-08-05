@@ -1,6 +1,8 @@
 #include <glm/glm.hpp>
+#include <algorithm>
 
 #include "glad/glad.h"
+#include "global.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <fmt/color.h>
@@ -79,6 +81,26 @@ p32 from_v2(v2 v) {
 
 struct DbgContext;
 
+struct DefaultRenderSettings {
+  inline static const double WIDTH = 20.0;
+  inline static const bool GenerateBothSides = false;
+  inline static const bool GenerateDebugGeometry = false;
+  inline static const bool GenerateOutline = false;
+};
+
+struct FirstPassSettings {
+  inline static const double WIDTH = 2000.0;
+  inline static const bool GenerateBothSides = true;
+  inline static const bool GenerateDebugGeometry = true;
+  inline static const bool GenerateOutline = true;
+};
+struct AAPassSettings {
+  inline static const double WIDTH = 300.0;
+  const static bool GenerateBothSides = false;
+  const static bool GenerateDebugGeometry = true;
+  const static bool GenerateOutline = false;
+};
+
 class RoadRenderer {
  public:
   // loads, compiles and links shaders.
@@ -92,7 +114,10 @@ class RoadRenderer {
 
   void add_road_geometry() {}
 
-  static std::vector<p32> generate_geometry(vector<p32> polyline,
+  template <class Settings = DefaultRenderSettings>
+  static std::vector<p32> generate_geometry(span<p32> polyline,
+                                            span<p32> triangles_output,
+                                            span<p32> outline_output,
                                             DbgContext& ctx);
 };
 
@@ -298,7 +323,23 @@ struct DbgContext {
 // antialiasing.
 // See also:
 //  http://wiki.gis.com/wiki/index.php/Buffer_(GIS)
-std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
+/*
+ For each vertex of polyline find normalized vector that bisects angle
+ between them, this would give us volume for road. tip: this probably
+
+  ------------o d
+             / \
+ p1 --------o p2\
+           / \   \
+ ---------/e  \   \
+          \    \   \
+           \    \p3 \
+  */
+
+template <class Settings>
+std::vector<p32> RoadRenderer::generate_geometry(span<p32> polyline,
+                                                 span<p32> triangles_output,
+                                                 span<p32> outline_output,
                                                  DbgContext& ctx) {
   // to draw by two points, we need to have some special handling
   // which I have not implemented yet.
@@ -308,90 +349,122 @@ std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
     return {{}};
   }
 
-  /*
-   For each vertex of polyline find normalized vector that bisects angle
-   between them, this would give us volume for road. tip: this probably
+  // hopefully it is inlinable and thus compatible with optimizations
+  auto on_outline_point = [i = 0u, &outline_output, size = polyline.size()](
+                              v2 d, v2 e) mutable {
+    if (Settings::GenerateOutline) {
+      outline_output[i].x = d.x;
+      outline_output[i].y = d.y;
+      if (Settings::GenerateBothSides) {
+        outline_output[size * 2 - i - 1].x = e.x;
+        outline_output[size * 2 - i - 1].y = e.y;
+      }
+      i++;
+    }
+  };
 
-    ------------o d
-               / \
-   p1 --------o p2\
-             / \   \
-   ---------/e  \   \
-            \    \   \
-             \    \p3 \
-    */
-
-  const double WIDTH = 20.0;
+  double FACTOR = 1000.0;
 
   // Process polyline by overving 3 adjacent vertices
   v2 prev_d, prev_e;
   for (size_t i = 2; i < polyline.size(); ++i) {
-    auto p1 = polyline[i - 2], p2 = polyline[i - 1], p3 = polyline[i];
+    auto p1 = polyline[i - 2];
+    auto p2 = polyline[i - 1];
+    auto p3 = polyline[i];
 
-#ifndef NDEBUG
-    ctx.add_line(p1, p2, colors::black);  // original polyline
-#endif
     // t1, t2: perpendiculars to a and b
     v2 a{p1, p2};
     v2 b{p2, p3};
-    v2 t1 = normalized(v2{-a.y, a.x}) * WIDTH;
-    v2 t2 = normalized(v2{-b.y, b.x}) * WIDTH;
+    v2 t1 = normalized(v2{-a.y, a.x}) * Settings::WIDTH;
+    v2 t2 = normalized(v2{-b.y, b.x}) * Settings::WIDTH;
 
-#ifndef NDEBUG
-    ctx.add_line(p1, p1 + t1, colors::grey);
-    ctx.add_line(p2, p2 + t1, colors::grey);
-    ctx.add_line(p2, p2 + t2, colors::grey);
-    ctx.add_line(p3, p3 + t2, colors::grey);
+    if constexpr (Settings::GenerateDebugGeometry) {
+      ctx.add_line(p1, p2, colors::black);  // original polyline
+      ctx.add_line(p1, p1 + t1, colors::grey);
+      ctx.add_line(p2, p2 + t1, colors::grey);
+      ctx.add_line(p2, p2 + t2, colors::grey);
+      ctx.add_line(p3, p3 + t2, colors::grey);
 
-    ctx.add_line(p1, p1 + -t1, colors::grey);
-    ctx.add_line(p2, p2 + -t1, colors::grey);
-    ctx.add_line(p2, p2 + -t2, colors::grey);
-    ctx.add_line(p3, p3 + -t2, colors::grey);
-#endif  // NDEBUG
+      ctx.add_line(p1, p1 + -t1, colors::grey);
+      ctx.add_line(p2, p2 + -t1, colors::grey);
+      ctx.add_line(p2, p2 + -t2, colors::grey);
+      ctx.add_line(p3, p3 + -t2, colors::grey);
+    }
 
     v2 d;
     if (!gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d)) {
       // in this case we can can just skip the point,
       // this must be something wrong with compilation side of the map.
       log_warn("parallel lines at {},{},{}", i - 2, i - 1, i);
+
+      // todo: fix me.
+      // that is the problem: if we emit a point in the same place
+      // where previous point this would get algorithm nuts on second AA-pass.
+      // possible fix is to skip such points in algorithm or emit something on
+      // the same line.
+      // on_outline_point(prev_d, prev_e);
+
       continue;
     }
 
     // find intersecion on other side
     v2 e;
-    bool intersect =
-        gg::lines_intersection(p1 + -t1, p2 + -t1, p3 + -t2, p2 + -t2, e);
-    assert(intersect);  // we already checked this on main side.
+
+    if constexpr (Settings::GenerateBothSides) {
+      bool intersect =
+          gg::lines_intersection(p1 + -t1, p2 + -t1, p3 + -t2, p2 + -t2, e);
+      assert(intersect);  // we already checked this on main side.
+    }
 
     if (i == 2) {  // first iteration
       prev_d = p1 + t1;
-      prev_e = p1 + -t1;
+
+      if constexpr (Settings::GenerateBothSides) {
+        prev_e = p1 + -t1;
+      }
+
+      on_outline_point(prev_d, prev_e);
     }
 
-#ifndef NDEBUG
-    ctx.add_line(p2, d, colors::green);
-    ctx.add_line(p2, e, colors::green);
-    ctx.add_line(prev_d, d, colors::blue);
-    ctx.add_line(prev_e, e, colors::blue);
-#endif  // NDEBUG
+    if (i == 3) {
+      // starting from this point.
+    }
+
+    if constexpr (Settings::GenerateDebugGeometry) {
+      ctx.add_line(p2, d, colors::green);
+      ctx.add_line(prev_d, d, colors::blue);
+      if constexpr (Settings::GenerateBothSides) {
+        ctx.add_line(p2, e, colors::green);
+        ctx.add_line(prev_e, e, colors::blue);
+      }
+    }
+
+    on_outline_point(d, e);
 
     prev_d = d;
-    prev_e = e;
+
+    if constexpr (Settings::GenerateBothSides) {
+      prev_e = e;
+    }
   }
 
   // Handle end.
   auto p1 = polyline[polyline.size() - 2];
   auto p2 = polyline[polyline.size() - 1];
   v2 a{p1, p2};
-  v2 perp_a = normalized(v2{-a.y, a.x}) * WIDTH;
+  v2 perp_a = normalized(v2{-a.y, a.x}) * Settings::WIDTH;
   v2 d = p2 + perp_a;
   v2 e = p2 + -perp_a;
 
-#ifndef NDEBUG
-  ctx.add_line(p1, p2, colors::black);  // original polyline
-  ctx.add_line(prev_d, d, colors::blue);
-  ctx.add_line(prev_e, e, colors::blue);
-#endif  // NDEBUG
+  on_outline_point(d, e);
+
+  if constexpr (Settings::GenerateDebugGeometry) {
+    ctx.add_line(p1, p2, colors::black);  // original polyline
+    ctx.add_line(prev_d, d, colors::blue);
+    if constexpr (Settings::GenerateBothSides) {
+      ctx.add_line(prev_e, e, colors::blue);
+    }
+  }
 
   return {{}};
 }
@@ -401,8 +474,8 @@ namespace cameras {
 struct Cam2d {
   glm::vec2 window_size;
   glm::vec2 focus_pos;
-  float zoom = 1.0;
-  float rotation = 0.0;
+  double zoom = 1.0;
+  double rotation = 0.0;
   glm::vec2 zoom_pos;
 
   // todo: this is view projection matrix.
@@ -413,7 +486,7 @@ struct Cam2d {
     glm::mat4 view_m{1.0f};
     view_m =
         glm::translate(view_m, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});  // 4-th
-    view_m = glm::rotate(view_m, this->rotation,
+    view_m = glm::rotate(view_m, (float)this->rotation,
                          glm::vec3{0.0f, 0.0f, -1.0f});  // 3-rd
     view_m =
         glm::scale(view_m, glm::vec3{this->zoom, this->zoom, 1.0});  // 2-nd
@@ -422,7 +495,7 @@ struct Cam2d {
   }
 
   glm::vec2 unproject(glm::vec2 p) const {
-    float w = this->window_size.x, h = this->window_size.y;
+    double w = this->window_size.x, h = this->window_size.y;
     auto clip_p = glm::vec4{
         p[0] / w * 2.0 - 1.0,
         (p[1] / h * 2.0 - 1.0) * -1.0,  // *-1 because we have y flipped
@@ -675,7 +748,10 @@ int main() {
         glfwGetCursorPos(wnd, &cx, &cy);
         auto mouse_pos_world = cam.unproject(glm::vec2{cx, cy});
         cam.zoom_pos = mouse_pos_world;
-        cam.zoom = cam.zoom + yoffset * 0.1;
+        cam.zoom = cam.zoom *
+                   pow(2, yoffset * 0.1);  // zoom slightly more in than out.
+                   std::cout << "cam.zoom: " << cam.zoom << "\n";
+        cam.zoom = std::clamp(cam.zoom, 0.000212537, 1000.0);
         auto mouse_pos_after_zoom_world = cam.unproject(glm::vec2{cx, cy});
         auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
         cam.focus_pos -= diff;
@@ -683,8 +759,8 @@ int main() {
 
 #ifndef NDEBUG
         auto control_diff = cam.unproject(glm::vec2{cx, cy}) - mouse_pos_world;
-        assert(control_diff[0] < 0.1 && control_diff[1] < 0.1);
-        //std::cout << "zoom-around-loc: sanity test passed\n";
+        assert(control_diff[0] < 1.0 && control_diff[1] < 1.0);
+    // std::cout << "zoom-around-loc: sanity test passed\n";
 #endif
       });
   // ------------------------------------------------------------------------
@@ -847,27 +923,83 @@ int main() {
 
   DbgContext dctx;
 
+  std::vector<p32> triangles_output{100};
   {
     v2 origin = v2{10000.0, 20000.0} + v2{200.0, 200.0};
     auto p1 = from_v2(origin + v2{0.0, 0.0});
-    auto p2 = from_v2(origin + v2{100.0, 100.0});
-    auto p3 = from_v2(origin + v2{200.0, 80.0});
-    auto p4 = from_v2(origin + v2{300.0, 200.0});
-    auto p5 = from_v2(p4 + v2{350.0, 100.0});
-    auto p6 = from_v2(p5 + v2{400.0, 100.0});
-    auto p7 = from_v2(p6 + v2{30.0, -70.0});
-    auto p8 = from_v2(p7 + v2{30.0, -70.0});  // parallel to previous one.
-    auto p9 =
-        from_v2(p8 + v2{30.0, -70.0});  // one more parallel to previous one.
-    RoadRenderer::generate_geometry({p1, p2, p3, p4, p5, p6, p7, p8, p9}, dctx);
+    auto p2 = from_v2(origin + v2{100.0, 100.0} * 100);
+    auto p3 = from_v2(origin + v2{200.0, 80.0} * 100);
+    auto p4 = from_v2(origin + v2{300.0, 200.0} * 100) ;
+    auto p5 = from_v2(p4 + v2{350.0, 100.0}* 100);
+    auto p6 = from_v2(p5 + v2{400.0, 100.0}* 100);
+    vector<p32> input{{p1, p2, p3, p4, p5, p6}};
+    vector<p32> outline_output(input.size() * 2);
+    vector<p32> aa_outline_output(input.size());
+    RoadRenderer::generate_geometry<FirstPassSettings>(input, triangles_output,
+                                                       outline_output, dctx);
+    RoadRenderer::generate_geometry<AAPassSettings>(outline_output, span<p32>{},
+                                                    aa_outline_output, dctx);
+
+    vector<Color> line_colors = {colors::red /*,colors::green,colors::blue*/};
+    int curr_col = 0;
+    p32 prev_p;
+    bool first = true;
+    for (auto p : outline_output) {
+      if (!first) {
+        std::cout << "line: " << prev_p << ", " << p << "\n";
+        dctx.add_line(prev_p, p, line_colors[curr_col++ % line_colors.size()]);
+      }
+      prev_p = p;
+      first = false;
+    }
   }
+
+  // std::vector<p32> triangles_output{100};
+  // {
+  //   v2 origin = v2{10000.0, 20000.0} + v2{200.0, 200.0};
+  //   auto p1 = from_v2(origin + v2{0.0, 0.0});
+  //   auto p2 = from_v2(origin + v2{100.0, 100.0});
+  //   auto p3 = from_v2(origin + v2{200.0, 80.0});
+  //   auto p4 = from_v2(origin + v2{300.0, 200.0});
+  //   auto p5 = from_v2(p4 + v2{350.0, 100.0});
+  //   auto p6 = from_v2(p5 + v2{400.0, 100.0});
+  //   auto p7 = from_v2(p6 + v2{30.0, -70.0});
+  //   auto p8 = from_v2(p7 + v2{30.0, -70.0});  // parallel to previous one.
+  //   auto p9 =
+  //       from_v2(p8 + v2{30.0, -70.0});  // one more parallel to previous one.
+  //   vector<p32> input{{p1, p2, p3, p4, p5, p6, p7, p8, p9}};
+  //   vector<p32> outline_output(input.size() * 2);
+  //   vector<p32> aa_outline_output(input.size());
+  //   RoadRenderer::generate_geometry<FirstPassSettings>(input,
+  //   triangles_output,
+  //                                                      outline_output, dctx);
+  //   RoadRenderer::generate_geometry<AAPassSettings>(outline_output,
+  //   span<p32>{},
+  //                                                   aa_outline_output, dctx);
+
+  //   vector<Color> line_colors = {colors::red,colors::green,colors::blue};
+  //   int curr_col = 0;
+  //   p32 prev_p;
+  //   bool first = true;
+  //   for (auto p : outline_output) {
+  //     if (!first) {
+  //       std::cout << "line: " << prev_p << ", " << p << "\n";
+  //       dctx.add_line(prev_p, p, line_colors[curr_col++ %
+  //       line_colors.size()]);
+  //     }
+  //     prev_p = p;
+  //     first = false;
+  //   }
+  // }
   {
     v2 origin = v2{10000.0, 20000.0} + v2{1000.0, 1000.0};
     auto p1 = from_v2(origin + v2{0.0, 0.0});
     auto p2 = from_v2(p1 + v2{100.0, 0.0});
     auto p3 = from_v2(p2 + v2{30, -100.0});
-
-    RoadRenderer::generate_geometry({p1, p2, p3}, dctx);
+    vector<p32> input{{p1, p2, p3}};
+    vector<p32> outline_output(input.size() * 2);
+    // RoadRenderer::generate_geometry(input, triangles_output, outline_output,
+    // dctx);
   }
   Lines road_dbg_lines{(unsigned)dctx.lines.size()};
   if (!road_dbg_lines.load_shaders()) {

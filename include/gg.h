@@ -76,12 +76,13 @@ inline v2 operator-(v2 v) { return v * -1; }
 //            u0. u1 ]
 inline double cross2d(v2 v, v2 u) { return v[0] * u[1] - v[1] * u[0]; }
 
-// https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
-// Returns 1 if the lines intersect, otherwise 0. In addition, if the lines
-// intersect the intersection point may be stored in the doubles i_x and i_y.
+
 inline bool lines_intersection_impl(double p0_x, double p0_y, double p1_x, double p1_y,
                            double p2_x, double p2_y, double p3_x, double p3_y,
                            double* i_x, double* i_y) {
+	// Solve system of linear equations a1x + b1y + c1 and a2x + b2y + c1
+	// using cramer's rule.
+
   double s1_x = p1_x - p0_x;
   double s1_y =  p1_y - p0_y;
   double s2_x = p3_x - p2_x;
