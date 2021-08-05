@@ -3,6 +3,7 @@
 #include "glad/glad.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <fmt/color.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
@@ -62,7 +63,7 @@ std::ostream& operator<<(std::ostream& os, const glm::mat4& m) {
 
 v2 from_glmvec2(glm::vec2 v) { return v2{v.x, v.y}; }
 p32 from_v2(v2 v) {
-  return p32{static_cast<uint32_t>(v.x()), static_cast<uint32_t>(v.y())};
+  return p32{static_cast<uint32_t>(v.x), static_cast<uint32_t>(v.y)};
 }
 
 struct DbgContext;
@@ -90,6 +91,7 @@ struct Color {
 };
 
 namespace colors {
+static Color black{0.0f, 0.0f, 0.0f};
 static Color green{0.0f, 1.0f, 0.0f};
 static Color red{1.0f, 0.0f, 0.0f};
 static Color blue{0.0f, 0.0f, 1.0f};
@@ -111,10 +113,10 @@ struct Lines {
     this->geometry.clear();
     this->colors.clear();
     for (auto [a, b, color] : lines) {
-      this->geometry.push_back(a.x());
-      this->geometry.push_back(a.y());
-      this->geometry.push_back(b.x());
-      this->geometry.push_back(b.y());
+      this->geometry.push_back(a.x);
+      this->geometry.push_back(a.y);
+      this->geometry.push_back(b.x);
+      this->geometry.push_back(b.y);
       // line has two vertex colored one way, no interpolation needed
       this->colors.push_back(color.r);
       this->colors.push_back(color.g);
@@ -199,7 +201,9 @@ struct Lines {
 
       void main()
       {
+        //gl_Position = proj * vec4(aPos.x + sin(aPos.y), aPos.y + sin(aPos.x), 0.0, 1.0);
         gl_Position = proj * vec4(aPos.x, aPos.y, 0.0, 1.0);
+        //gl_Position = vec4(gl_Position.x + sin(gl_Position.y), gl_Position.y + sin(gl_Position.x), 0.0, 1.0);
         myFragColor = aColor;
       }
     )shader";
@@ -267,6 +271,9 @@ struct DbgContext {
   std::vector<tuple<p32, p32, Color>> lines;
   // if we add key then we can have layered structure with checkboxes in imgui.
   void add_line(p32 a, p32 b, Color c) { this->lines.emplace_back(a, b, c); }
+  void add_line(v2 a, v2 b, Color c) {
+    this->lines.emplace_back(from_v2(a), from_v2(b), c);
+  }
 };
 
 // todo: it seems like it is beneficial to have precalculated normal vectors
@@ -275,78 +282,109 @@ struct DbgContext {
 /*static*/
 
 // so this is going to generate vertexes particularly suited for drawing
-// via the same shader. In general this are vertices for this particular shader program.
-// which knows how to draw roads, use specified colors and make antialiasing.
+// via the same shader. In general this are vertices for this particular shader
+// program. which knows how to draw roads, use specified colors and make
+// antialiasing.
+// See also:
+//  http://wiki.gis.com/wiki/index.php/Buffer_(GIS)
 std::vector<p32> RoadRenderer::generate_geometry(vector<p32> polyline,
                                                  DbgContext& ctx) {
   // to draw by two points, we need to have some special handling
   // which I have not implemented yet.
   assert(polyline.size() > 2);
 
-  // For each vertex of polyline find normalized vector that bisects angle
-  // between them, this would give us volume for road. tip: this probably
-  //
-  // ------------o e
-  //            / \
-  //p1 --------o p2\
-  //          / \   \
-  //---------/d  \   \
-  //         \    \   \
-  //          \    \p3 \
+  /*
+   For each vertex of polyline find normalized vector that bisects angle
+   between them, this would give us volume for road. tip: this probably
 
-  // todo: maybe we can get rid of this special case by putting two fake
-  // elements along the same lines?
+    ------------o d
+               / \
+   p1 --------o p2\
+             / \   \
+   ---------/e  \   \
+            \    \   \
+             \    \p3 \
+    */
+
+  const double WIDTH = 20.0;
+
+  // Process polyline by overving 3 adjacent vertices
   v2 prev_d, prev_e;
-  v2 a{polyline[0], polyline[1]};
-  auto perp_a = normalized(v2{-a.y(), a.x()});
-  prev_d = v2{polyline[0]} + perp_a * 20.0;
-  prev_e = v2{polyline[0]} + (perp_a * -1) * 20.0;
-
-  int sign = 1;
   for (size_t i = 2; i < polyline.size(); ++i) {
     auto p1 = polyline[i - 2], p2 = polyline[i - 1], p3 = polyline[i];
-    v2 a{p2, p1}, b{p2, p3};
-    v2 d = normalized(normalized(a) + normalized(b)) * 20.0;
-    v2 e = d * -1;
 
-    // we want to have all d's on one side and e's on other side.
-    // if they have dot negative product than side has changed
-    // from previous iteration and we need to get it back.
-    if (dot(d, prev_d) < 0) {
-      std::swap(d, e);
+#ifndef NDEBUG
+    ctx.add_line(p1, p2, colors::black);  // original polyline
+#endif
+
+    // perpendiculars
+
+    // t1, t2: perpendiculars to a and b
+    v2 a{p1, p2};
+    v2 b{p2, p3};
+    v2 t1{-a.y, a.x};
+    v2 t2{-b.y, b.x};
+
+    t1 = normalized(t1) * WIDTH;
+    t2 = normalized(t2) * WIDTH;
+
+#ifndef NDEBUG
+    ctx.add_line(p1, p1 + t1, colors::grey);
+    ctx.add_line(p2, p2 + t1, colors::grey);
+    ctx.add_line(p2, p2 + t2, colors::grey);
+    ctx.add_line(p3, p3 + t2, colors::grey);
+
+    ctx.add_line(p1, p1 + -t1, colors::grey);
+    ctx.add_line(p2, p2 + -t1, colors::grey);
+    ctx.add_line(p2, p2 + -t2, colors::grey);
+    ctx.add_line(p3, p3 + -t2, colors::grey);
+#endif // NDEBUG
+
+    v2 d;
+    if (!gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d)) {
+      // in this case we can can just skip the point,
+      // this must be something wrong with compilation side of the map.
+      std::cout << fmt::format(fg(fmt::color::black) | bg(fmt::color::yellow),
+                               "warn: parallel lines at {},{},{}", i - 2, i - 1,
+                               i)
+                << "\n";
+      continue;
     }
 
-    std::cout << "dot(d, prev_d):" << dot(d, prev_d) << "\n";
+    // find intersecion on other side
+    v2 e;
+    bool intersect = gg::lines_intersection(p1 + -t1, p2 + -t1, p3 + -t2, p2 + -t2, e);
+    assert(intersect); // we already checked this on main side.
 
-    v2 origin = p2;
-    //ctx.add_line(from_v2(origin), from_v2(origin + a), colors::green);
-    //ctx.add_line(from_v2(origin), from_v2(origin + b), colors::green);
-    //ctx.add_line(from_v2(origin), from_v2(origin + d), colors::blue);
-    //ctx.add_line(from_v2(origin), from_v2(origin + e), colors::red);
+    if (i == 2) {  // first iteration
+      prev_d = p1 + t1;
+      prev_e = p1 + -t1;
+    }
 
-    // if (i > 2) {
-    ctx.add_line(from_v2(prev_d), from_v2((origin + d)), colors::magenta);
-    ctx.add_line(from_v2((prev_e)), from_v2((origin + e)), colors::magenta);
-    //}
+#ifndef NDEBUG
+    ctx.add_line(p2, d, colors::green);
+    ctx.add_line(p2, e, colors::green);
+    ctx.add_line(prev_d, d, colors::blue);
+    ctx.add_line(prev_e, e, colors::blue);
+#endif // NDEBUG
 
-    // todo: e and d are computed incorrectly here, to make it correct, use the following:
-    // https://cs.stackexchange.com/questions/127295/algorithm-for-intersection-point-between-two-vectors
-    // https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
-
-    prev_d = origin + d;
-    prev_e = origin + e;
+    prev_d = d;
+    prev_e = e;
   }
 
-  { // todo: add fake ends to bot handle this ends.
-    v2 a{polyline[polyline.size() - 2], polyline[polyline.size() - 1]};
-    auto perp_a = normalized(v2{-a.y(), a.x()});
-    auto last_d = v2{polyline[polyline.size() - 1]} + perp_a * 20.0;
-    auto last_e = v2{polyline[polyline.size() - 1]} + (perp_a * -1) * 20.0;
+  // Handle end.
+  auto p1 = polyline[polyline.size() - 2];
+  auto p2 = polyline[polyline.size() - 1];
+  v2 a{p1, p2};
+  v2 perp_a = normalized(v2{-a.y, a.x}) * WIDTH;
+  v2 d = p2 + perp_a;
+  v2 e = p2 + -perp_a;
 
-    auto origin = v2{polyline[polyline.size() - 1]};
-    ctx.add_line(from_v2(prev_d), from_v2((last_d)), colors::magenta);
-    ctx.add_line(from_v2((prev_e)), from_v2((last_e)), colors::magenta);
-  }
+#ifndef NDEBUG
+  ctx.add_line(p1, p2, colors::black);  // original polyline
+  ctx.add_line(prev_d, d, colors::blue);
+  ctx.add_line(prev_e, e, colors::blue);
+#endif // NDEBUG
 
   return {{}};
 }
@@ -431,7 +469,7 @@ const char* exp_vertex_shader = R"shader(
 		void main()
 		{
 			color = col;
-		    gl_Position = proj * vec4(aPos.x, aPos.y, aPos.z, 1.0);
+		    gl_Position = proj * vec4(aPos.x + sin(aPos.y), aPos.y + sin(aPos.x), aPos.z, 1.0);
 		}
 )shader";
 
@@ -811,7 +849,10 @@ int main() {
     auto p5 = from_v2(p4 + v2{350.0, 100.0});
     auto p6 = from_v2(p5 + v2{400.0, 100.0});
     auto p7 = from_v2(p6 + v2{30.0, -70.0});
-    RoadRenderer::generate_geometry({p1, p2, p3, p4, p5, p6, p7}, dctx);
+    auto p8 = from_v2(p7 + v2{30.0, -70.0});  // parallel to previous one.
+    auto p9 =
+        from_v2(p8 + v2{30.0, -70.0});  // one more parallel to previous one.
+    RoadRenderer::generate_geometry({p1, p2, p3, p4, p5, p6, p7, p8, p9}, dctx);
   }
   {
     v2 origin = v2{10000.0, 20000.0} + v2{1000.0, 1000.0};
