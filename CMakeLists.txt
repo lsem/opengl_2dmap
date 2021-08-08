@@ -9,8 +9,7 @@ HunterGate(
     SHA1 "6386836a2f0eece999f47f79ead46865261ee4ba"
 )
 
-
-project(red_triangle)
+project(navipoc)
 
 #find_package(OpenGL REQUIRED)
 
@@ -38,25 +37,29 @@ if (${FORCE_COLORED_OUTPUT})
     endif ()
 endif ()
 
+hunter_add_package(glfw)
+find_package(glfw3 REQUIRED)
 
-# gg
-set(SOURCE_FILES "")
-add_library(gg "gg.cpp" "include/gg.h")
-set_target_properties(gg PROPERTIES CXX_STANDARD "17")
-target_include_directories(gg PUBLIC "include")
-
-
-# red_triangle
-set(SOURCE_FILES main.cpp glad.c)
-add_executable(red_triangle ${SOURCE_FILES})
-target_include_directories(red_triangle PRIVATE "include/")
-set_target_properties(red_triangle PROPERTIES CXX_STANDARD "17")
-target_link_libraries(red_triangle PRIVATE  fmt::fmt glfw glm gg Microsoft.GSL::GSL)
+add_subdirectory(src/glad)
+add_subdirectory(src/gg)
+add_subdirectory(src/common)
+add_subdirectory(src/render_lib)
+add_subdirectory(src/render_demo)
 
 
-# gg_tests
-add_executable(gg_tests "gg_tests_main.cpp" "gg_tests.cpp")
-set_target_properties(gg_tests PROPERTIES CXX_STANDARD "17")
-target_link_libraries(gg_tests PRIVATE gg GTest::gtest)
+# # render_demo
+# file(GLOB_RECURSE RENDERDEMO_H_FILES  CONFIGURE_DEPENDS "*.h")
+# file(GLOB_RECURSE RENDERDEMO_CPP_FILES  CONFIGURE_DEPENDS "*.cpp")
+# add_executable(render_demo ${RENDERDEMO_H_FILES} ${RENDERDEMO_CPP_FILES})
+# target_include_directories(render_demo PRIVATE "include/")
+# target_include_directories(render_demo PRIVATE ".")
+# set_target_properties(render_demo PROPERTIES CXX_STANDARD "17")
+# target_link_libraries(render_demo PRIVATE  fmt::fmt glfw glm gg Microsoft.GSL::GSL)
+
+
+# # gg_tests
+# add_executable(gg_tests "gg_tests_main.cpp" "gg_tests.cpp")
+# set_target_properties(gg_tests PROPERTIES CXX_STANDARD "17")
+# target_link_libraries(gg_tests PRIVATE gg GTest::gtest)
 
 
