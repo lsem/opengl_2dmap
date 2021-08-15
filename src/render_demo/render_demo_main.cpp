@@ -36,6 +36,10 @@
 
 #include "render_lib/shader_program.h"
 
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
+
 using camera::Cam2d;
 using camera_control::CameraControl;
 
@@ -162,6 +166,16 @@ int main() {
   glfwSwapInterval(0); // vsync
   glfwShowWindow(window);
 
+  // Setup Dear ImGui context
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO &io = ImGui::GetIO();
+  // Setup Platform/Renderer bindings
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init(NULL);
+  // Setup Dear ImGui style
+  ImGui::StyleColorsLight();
+
   CrosshairUnit crosshair;
   if (!crosshair.load_shaders(SHADERS_ROOT)) {
     log_err("failed loading crosshair shaders");
@@ -205,7 +219,7 @@ int main() {
 
   srand(clock());
 
-  for (int i = 0; i < 200; ++i) {
+  for (int i = 0; i < 20; ++i) {
     int random_segments_count = rand() % 30 + 4;
     double random_vector_angle = ((rand() % 360) / 360.0) * 2 * M_PI;
     const int scater = 60000;
@@ -232,7 +246,7 @@ int main() {
         break;
       }
       //// dctx.add_line(prev_p, p, rgb[next_color++ % rgb.size()]);
-      //dctx.add_line(prev_p, p, colors::grey);
+      // dctx.add_line(prev_p, p, colors::grey);
       prev_p = p;
 
       random_polyline.push_back(from_v2(p));
@@ -332,11 +346,16 @@ int main() {
   // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
     update_fps_counter(window);
     process_input(window);
 
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    // feed inputs to dear imgui, start new frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
 
     if (g_wireframe_mode != g_prev_wireframe_mode) {
       if (g_wireframe_mode) {
@@ -354,8 +373,11 @@ int main() {
       crosshair.render_frame(cam);
     }
 
+    ImGui::Text("Hello, world %d", 123);
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
     glfwSwapBuffers(window);
-    glfwPollEvents();
     // in case window size has changed, make camera aware of it.
     // this should have been done in framebuffer callback but I cannot
     // capture camera into plain C function.
