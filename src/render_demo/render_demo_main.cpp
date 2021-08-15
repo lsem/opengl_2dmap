@@ -45,6 +45,9 @@ bool g_wireframe_mode = false;
 bool g_prev_wireframe_mode = false;
 bool g_show_crosshair = false;
 
+uint32_t MASTER_ORIGIN_X = 100'000'00;
+uint32_t MASTER_ORIGIN_Y = 100'000'00;
+
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
 
@@ -178,80 +181,139 @@ int main() {
     return -1;
   }
 
-  cam.focus_pos = triangle.triangle_center();
+  // cam.focus_pos = triangle.triangle_center();
+  cam.focus_pos = glm::vec2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y};
   cam.zoom = 0.1;
 
   DebugCtx dctx;
 
-  vector<p32> triangles_output;
+  // vector<p32> triangles_output;
+  // vector<ColoredVertex> aa_data_vector;
 
-  {
-    v2 origin = v2{10000.0, 20000.0} + v2{200.0, 200.0};
-    auto p1 = from_v2(origin + v2{0.0, 0.0});
-    auto p2 = from_v2(origin + v2{100.0, 100.0} * 100);
-    auto p3 = from_v2(origin + v2{200.0, 80.0} * 100);
-    auto p4 = from_v2(origin + v2{300.0, 200.0} * 100);
-    auto p5 = from_v2(p4 + v2{350.0, 100.0} * 100);
-    auto p6 = from_v2(p5 + v2{400.0, 100.0} * 100);
-    auto p7 = from_v2(p6 + v2{-400.0, +100.0} * 100);
-    auto p8 = from_v2(p7 + v2{0.0, -300.0} * 100);
-    vector<p32> input{{p1, p2, p3, p4, p5, p6, p7, p8}};
-    // vector<p32> input;
-    // for (int i = 0; i < 300; ++i) {
-    //   auto rand_p = cam.unproject(glm::vec2{rand() % 800, rand() % 600});
-    //   p32 r{static_cast<uint32_t>(rand_p.x),
-    //   static_cast<uint32_t>(rand_p.y)}; input.push_back(r);
-    //   //      std::cout << cam.unproject(ys) << "\n";
-    // }
-    // triangles_output.resize(
-    //     (input.size() - 1) *
-    //     8); // input.size() - 1 segments, 8 points for each for both sides
-    //         // (could be reduced to 6 in fact)
+  vector<Color> rgb = {colors::red, colors::green, colors::blue};
+  int next_color = 0;
 
-    // todo: we can ask tesselator to give us this number depending on settings.
-    triangles_output.resize((input.size() - 1) *
-                            12); // if we used ebo, we could have 4 points per
-                                 // quad instead of 6. but this requires quite
-                                 // alot of indices, so I doubt this would help.
+  //
+  // Generate random polylines
+  //
+  const double k = 100.0;
 
-    vector<p32> outline_output(input.size() * 2);
-    vector<p32> aa_outline_output(input.size() * 2);
-    roads::tesselation::generate_geometry<
-        roads::tesselation::FirstPassSettings>(input, triangles_output,
-                                               outline_output, dctx);
+  vector<p32> all_roads_triangles(100000); // todo: calculate size correctly
+  vector<p32> all_roads_aa_triangles(100000);
+  size_t current_offset = 0;
+  size_t current_aa_offset = 0;
 
-    std::vector<p32> aa_triangles_output{outline_output.size() * 2 * 3 * 3};
-    roads::tesselation::generate_geometry<roads::tesselation::AAPassSettings>(
-        outline_output, aa_triangles_output, aa_outline_output, dctx);
+  srand(clock());
 
-    vector<Color> line_colors = {colors::red /*,colors::green,colors::blue*/};
-    int curr_col = 0;
-    p32 prev_p;
-    bool first = true;
-    for (auto p : outline_output) {
-      if (!first) {
-        // std::cout << "line: " << prev_p << ", " << p << "\n";
-        // dctx.add_line(prev_p, p, line_colors[curr_col++ %
-        // line_colors.size()]);
+  for (int i = 0; i < 200; ++i) {
+    int random_segments_count = rand() % 30 + 4;
+    double random_vector_angle = ((rand() % 360) / 360.0) * 2 * M_PI;
+    const int scater = 60000;
+    v2 origin =
+        v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y} +
+        (v2{rand() % scater - (scater / 2), rand() % scater - (scater / 2)});
+    v2 prev_p = origin;
+
+    vector<p32> random_polyline = {from_v2(prev_p)};
+    for (int s = 0; s < random_segments_count; s++) {
+      double random_length = (double)(rand() % 10000 + 100);
+      double random_angle =
+          random_vector_angle + ((rand() % 60 + 5) / 180.0) * M_PI;
+      auto random_direction =
+          normalized(v2(std::cos(random_angle), std::sin(random_angle)));
+      // log_debug("random_length: {}", random_length);
+      // log_debug("random_angle: {} ({})", random_angle,
+      //(random_angle / M_PI) * 180.0);
+
+      v2 p = prev_p + random_direction * random_length;
+
+      if (p.x < 0.0 || p.y < 0.0) {
+        log_warn("out of canvas. truncate road");
+        break;
       }
+      //// dctx.add_line(prev_p, p, rgb[next_color++ % rgb.size()]);
+      //dctx.add_line(prev_p, p, colors::grey);
       prev_p = p;
-      first = false;
+
+      random_polyline.push_back(from_v2(p));
+    }
+    if (random_polyline.size() < 3) {
+      log_warn("two small road, skip");
+      continue;
     }
 
-  // to show triangles.
-    for (size_t i = 3; i < triangles_output.size(); i += 4) {
-      auto p1 = triangles_output[i - 3];
-      auto p2 = triangles_output[i - 2];
-      auto p3 = triangles_output[i - 1];
-      auto p4 = triangles_output[i - 0];
-      // dctx.add_line(p1, p2, colors::magenta); // p1 - p2 - p3
-      // dctx.add_line(p2, p3, colors::magenta);
-      // dctx.add_line(p3, p1, colors::magenta);
-      // dctx.add_line(p1, p4, colors::magenta);
-      // dctx.add_line(p4, p3, colors::magenta);
-      // dctx.add_line(p3, p1, colors::magenta);
-    }
+    const size_t one_road_triangles_vertex_count =
+        (random_polyline.size() - 1) * 12;
+    span<p32> random_road_triangles_span(all_roads_triangles.data() +
+                                             current_offset,
+                                         one_road_triangles_vertex_count);
+
+    current_offset += one_road_triangles_vertex_count;
+
+    vector<p32> outline_output(
+        random_polyline.size() *
+        2); // outline must be have two lines per one segment.
+
+    roads::tesselation::generate_geometry<
+        roads::tesselation::FirstPassSettings>(random_polyline,
+                                               random_road_triangles_span,
+                                               outline_output, 2000.0, dctx);
+
+    const size_t one_road_aa_triangles_vertex_count =
+        (outline_output.size() - 1) * 12;
+    span<p32> random_road_aa_triangles_span(all_roads_aa_triangles.data() +
+                                                current_aa_offset,
+                                            one_road_aa_triangles_vertex_count);
+    current_aa_offset += one_road_aa_triangles_vertex_count;
+
+    vector<p32> no_outline_for_aa_pass; // just fake placeholder.
+    roads::tesselation::generate_geometry<roads::tesselation::AAPassSettings>(
+        outline_output, random_road_aa_triangles_span, no_outline_for_aa_pass,
+        5.0 / cam.zoom, dctx); // in world coordiantes try smth like 200.0
   }
+
+  RoadsUnit roads;
+  if (!roads.load_shaders(SHADERS_ROOT)) {
+    log_err("failed loading shaders for roads");
+    return -1;
+  }
+  if (!roads.make_buffers()) {
+    log_err("failed creating buffers for roads");
+    return -1;
+  }
+
+  for (size_t i = 0; i < current_aa_offset; ++i) {
+    // log_debug("aa[{}]: {}", i,  all_roads_aa_triangles[i]);
+  }
+
+  vector<ColoredVertex> aa_data;
+  aa_data.reserve(current_aa_offset);
+  // this transformations is artificial and temporary, we can get rid of that by
+  // abstracing out output container from  algorithm so that it can accept not
+  // only span<p32> but span<ColoredVertex>.
+  for (size_t i = 5; i < current_aa_offset; i += 6) {
+    auto p1 = all_roads_aa_triangles[i - 5];
+    auto p2 = all_roads_aa_triangles[i - 4];
+    auto p3 = all_roads_aa_triangles[i - 3];
+    auto p4 = all_roads_aa_triangles[i - 2];
+    auto p5 = all_roads_aa_triangles[i - 1];
+    auto p6 = all_roads_aa_triangles[i - 0];
+
+    auto COLOR = Color{0.53, 0.54, 0.55, 1.0};
+    auto NOCOLOR = Color{1.0f, 1.0f, 1.0f, 1.0f}; // color of glClearCOLOR
+
+    aa_data.emplace_back(p1, COLOR);
+    aa_data.emplace_back(p2, NOCOLOR);
+    aa_data.emplace_back(p3, NOCOLOR);
+    aa_data.emplace_back(p4, NOCOLOR);
+    aa_data.emplace_back(p5, COLOR);
+    aa_data.emplace_back(p6, COLOR);
+  }
+
+  span<p32> roads_data(all_roads_triangles.data(), current_offset);
+
+  roads.set_data(roads_data, aa_data);
+
   LinesUnit road_dbg_lines{(unsigned)dctx.lines.size()};
   if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
     std::cerr << "failed initializing renderer for road_dbg_lines\n";
@@ -265,22 +327,15 @@ int main() {
   }
   road_dbg_lines.assign_lines(lines_v2);
 
-  RoadsUnit roads;
-  if (!roads.load_shaders(SHADERS_ROOT)) {
-    log_err("failed loading shaders for roads");
-    return -1;
-  }
-  if (!roads.make_buffers()) {
-    log_err("failed creating buffers for roads");
-    return -1;
-  }
-  roads.set_data(triangles_output);
+  // glEnable(GL_BLEND); // aa needs that
+  // glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   while (!glfwWindowShouldClose(window)) {
     update_fps_counter(window);
     process_input(window);
 
-    glClearColor(.9f, .9f, .9f, 1.0f);
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (g_wireframe_mode != g_prev_wireframe_mode) {

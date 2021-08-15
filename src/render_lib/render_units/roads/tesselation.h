@@ -4,20 +4,20 @@
 namespace roads::tesselation {
 
 struct DefaultRenderSettings {
-  inline static const double WIDTH = 20.0;
+  //inline static const double WIDTH = 20.0;
   inline static const bool GenerateBothSides = false;
   inline static const bool GenerateDebugGeometry = false;
   inline static const bool GenerateOutline = false;
 };
 
 struct FirstPassSettings {
-  inline static const double WIDTH = 2000.0;
+  //inline static const double WIDTH = 2000.0;
   inline static const bool GenerateBothSides = true;
   inline static const bool GenerateDebugGeometry = false;
   inline static const bool GenerateOutline = true;
 };
 struct AAPassSettings {
-  inline static const double WIDTH = 300.0;
+  //inline static const double WIDTH = 300.0;
   const static bool GenerateBothSides = false;
   const static bool GenerateDebugGeometry = false;
   const static bool GenerateOutline = false;
@@ -44,7 +44,7 @@ struct AAPassSettings {
 template <class Settings = DefaultRenderSettings>
 static std::vector<p32>
 generate_geometry(span<p32> polyline, span<p32> triangles_output,
-                  span<p32> outline_output, DebugCtx &ctx) {
+                  span<p32> outline_output, double width, DebugCtx &ctx) {
   // to draw by two points, we need to have some special handling
   // which I have not implemented yet.
   assert(polyline.size() > 2);
@@ -56,10 +56,10 @@ generate_geometry(span<p32> polyline, span<p32> triangles_output,
   // hopefully it is inlinable and thus compatible with optimizations
   auto on_outline_point = [i = 0u, &outline_output,
                            size = polyline.size()](v2 d, v2 e) mutable {
-    if (Settings::GenerateOutline) {
+    if constexpr (Settings::GenerateOutline) {
       outline_output[i].x = d.x;
       outline_output[i].y = d.y;
-      if (Settings::GenerateBothSides) {
+      if constexpr (Settings::GenerateBothSides) {
         outline_output[size * 2 - i - 1].x = e.x;
         outline_output[size * 2 - i - 1].y = e.y;
       }
@@ -69,16 +69,21 @@ generate_geometry(span<p32> polyline, span<p32> triangles_output,
 
   auto on_triange = [i = 0u, &triangles_output](v2 p1, v2 p2, v2 p3,
                                                 v2 p4) mutable {
+    if ((i + 5) >= triangles_output.size()) {
+      log_err("fatal: check fialed: ({}) >= {}", i + 5,
+              triangles_output.size());
+    }
     assert((i + 5) < triangles_output.size());
-    // generate two triangles per one quad, 6 vertex total, for using ebo we could just emit four points clockwise.
-    
+    // generate two triangles per one quad, 6 vertex total, for using ebo we
+    // could just emit four points clockwise.
+
     triangles_output[i + 0].x = p1.x;
     triangles_output[i + 0].y = p1.y;
     triangles_output[i + 1].x = p2.x;
     triangles_output[i + 1].y = p2.y;
     triangles_output[i + 2].x = p3.x;
     triangles_output[i + 2].y = p3.y;
-    
+
     triangles_output[i + 3].x = p3.x;
     triangles_output[i + 3].y = p3.y;
     triangles_output[i + 4].x = p4.x;
@@ -100,8 +105,8 @@ generate_geometry(span<p32> polyline, span<p32> triangles_output,
     // t1, t2: perpendiculars to a and b
     v2 a{p1, p2};
     v2 b{p2, p3};
-    v2 t1 = normalized(v2{-a.y, a.x}) * Settings::WIDTH;
-    v2 t2 = normalized(v2{-b.y, b.x}) * Settings::WIDTH;
+    v2 t1 = normalized(v2{-a.y, a.x}) * width;
+    v2 t2 = normalized(v2{-b.y, b.x}) * width;
 
     if constexpr (Settings::GenerateDebugGeometry) {
       ctx.add_line(p1, p2, colors::black); // original polyline
@@ -178,7 +183,7 @@ generate_geometry(span<p32> polyline, span<p32> triangles_output,
   auto p1 = polyline[polyline.size() - 2];
   auto p2 = polyline[polyline.size() - 1];
   v2 a{p1, p2};
-  v2 perp_a = normalized(v2{-a.y, a.x}) * Settings::WIDTH;
+  v2 perp_a = normalized(v2{-a.y, a.x}) * width;
   v2 d = p2 + perp_a;
   v2 e = p2 + -perp_a;
 

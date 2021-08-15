@@ -106,9 +106,12 @@ public:
     cam().focus_pos -= diff;
     cam().zoom_pos = glm::vec2{cx, cy};
 
+    log_debug("XXX: {}", 5.0 / cam().zoom);
+
 #ifndef NDEBUG
     auto control_diff = cam().unproject(glm::vec2{cx, cy}) - mouse_pos_world;
-    assert(control_diff[0] < 1.0 && control_diff[1] < 1.0);
+    //assert(control_diff[0] < 1.0 && control_diff[1] < 1.0);
+    log_warn("control_diff[0] < 1.0 && control_diff[1] < 1.0");
     // std::cout << "zoom-around-loc: sanity test passed\n";
 #endif
   }

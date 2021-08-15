@@ -3,8 +3,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <ostream>
 #include <iostream>
+#include <ostream>
 
 // general geometry
 namespace gg {
@@ -41,26 +41,30 @@ using p32 = gpt_t;
 
 // todo: does it make sense to have integer vectors?
 struct v2 {
-	double x, y;
+  double x, y;
 
-  v2() {}  // uninitialized
-  v2(double x, double y): x(x), y(y) {}
+  v2() {} // uninitialized
+  v2(double x, double y) : x(x), y(y) {}
   v2(v2 a, v2 b) : v2(b[0] - a[0], b[1] - a[1]) {}
   v2(p32 p) : v2(p.x, p.y) {}
 
   double operator[](size_t idx) const {
     assert(idx < 3);
     if (idx == 0) {
-    	return x;
+      return x;
     } else if (idx == 1) {
-    	return y;
+      return y;
     } else {
-    	return {};
+      return {};
     }
   }
 };
 
 inline v2 operator*(v2 v, double s) { return v2{v[0] * s, v[1] * s}; }
+inline v2 &operator*=(v2 &v, double s) {
+  v = v * s;
+  return v;
+}
 inline v2 operator*(double s, v2 v) { return v * s; }
 inline v2 operator/(v2 v, double s) { return v2{v[0] / s, v[1] / s}; }
 inline v2 operator+(v2 a, v2 b) { return v2{a[0] + b[0], a[1] + b[1]}; }
@@ -76,50 +80,53 @@ inline v2 operator-(v2 v) { return v * -1; }
 //            u0. u1 ]
 inline double cross2d(v2 v, v2 u) { return v[0] * u[1] - v[1] * u[0]; }
 
-
-inline bool lines_intersection_impl(double p0_x, double p0_y, double p1_x, double p1_y,
-                           double p2_x, double p2_y, double p3_x, double p3_y,
-                           double* i_x, double* i_y) {
-	// Solve system of linear equations a1x + b1y + c1 and a2x + b2y + c1
-	// using cramer's rule.
+inline bool lines_intersection_impl(double p0_x, double p0_y, double p1_x,
+                                    double p1_y, double p2_x, double p2_y,
+                                    double p3_x, double p3_y, double *i_x,
+                                    double *i_y) {
+  // Solve system of linear equations a1x + b1y + c1 and a2x + b2y + c1
+  // using cramer's rule.
 
   double s1_x = p1_x - p0_x;
-  double s1_y =  p1_y - p0_y;
+  double s1_y = p1_y - p0_y;
   double s2_x = p3_x - p2_x;
   double s2_y = p3_y - p2_y;
 
   double det = s1_x * s2_y - s1_y * s2_x;
   if (std::fabs(det) < 0.00001) { // todo: use EPS instead of hardcoded
-  	return false;
+    return false;
   }
 
   double s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / det;
   double t = (s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / det;
 
   // check for segment intersection: s >= 0 && s <= 1 && t >= 0 && t <= 1
-   if (i_x != NULL) *i_x = p0_x + (t * s1_x);
-   if (i_y != NULL) *i_y = p0_y + (t * s1_y);
-   return true;
+  if (i_x != NULL)
+    *i_x = p0_x + (t * s1_x);
+  if (i_y != NULL)
+    *i_y = p0_y + (t * s1_y);
+  return true;
 }
 
-inline bool lines_intersection(v2 a, v2 b, v2 p, v2 q, v2& out_r) {
+inline bool lines_intersection(v2 a, v2 b, v2 p, v2 q, v2 &out_r) {
   double i_x, i_y;
-  if (lines_intersection_impl(a[0], a[1], b[0],b[1],p[0],p[1],q[0],q[1], &i_x, &i_y)) {
-  	out_r = v2{i_x, i_y};
+  if (lines_intersection_impl(a[0], a[1], b[0], b[1], p[0], p[1], q[0], q[1],
+                              &i_x, &i_y)) {
+    out_r = v2{i_x, i_y};
     return true;
   } else {
     return false;
   }
 }
 
-inline std::ostream& operator<<(std::ostream& os, p32 p) {
+inline std::ostream &operator<<(std::ostream &os, p32 p) {
   os << p.x << ", " << p.y;
   return os;
 }
 
-inline std::ostream& operator<<(std::ostream& os, v2 v) {
+inline std::ostream &operator<<(std::ostream &os, v2 v) {
   os << v[0] << ", " << v[1];
   return os;
 }
 
-}  // namespace gg
+} // namespace gg
