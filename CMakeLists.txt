@@ -47,19 +47,3 @@ add_subdirectory(src/render_lib)
 add_subdirectory(src/render_demo)
 
 
-# # render_demo
-# file(GLOB_RECURSE RENDERDEMO_H_FILES  CONFIGURE_DEPENDS "*.h")
-# file(GLOB_RECURSE RENDERDEMO_CPP_FILES  CONFIGURE_DEPENDS "*.cpp")
-# add_executable(render_demo ${RENDERDEMO_H_FILES} ${RENDERDEMO_CPP_FILES})
-# target_include_directories(render_demo PRIVATE "include/")
-# target_include_directories(render_demo PRIVATE ".")
-# set_target_properties(render_demo PROPERTIES CXX_STANDARD "17")
-# target_link_libraries(render_demo PRIVATE  fmt::fmt glfw glm gg Microsoft.GSL::GSL)
-
-
-# # gg_tests
-# add_executable(gg_tests "gg_tests_main.cpp" "gg_tests.cpp")
-# set_target_properties(gg_tests PROPERTIES CXX_STANDARD "17")
-# target_link_libraries(gg_tests PRIVATE gg GTest::gtest)
-
-

@@ -129,4 +129,42 @@ inline std::ostream &operator<<(std::ostream &os, v2 v) {
   return os;
 }
 
+inline double deg_to_rad(double x) { return x * M_PI / 180.0; }
+inline double rad_to_deg(double x) { return x * 180.0 / M_PI; }
+
+// Mercator projection formulas.
+namespace mercator {
+// These functions are commented until they are needed and they have tests.
+// inline double y_to_lat(double y) {
+//   return rad_to_deg(atan(exp(deg_to_rad(y))) * 2 - M_PI / 2);
+// }
+// Projects rad, input and output inr radians.
+// inline double x_to_lon(double x) { // todo: rename to unproject_lon
+//   return x;
+// }
+
+inline double lat_to_y_r(double lat_r) {
+  return log(tan(lat_r / 2 + M_PI / 4));
+}
+inline double lon_to_x_r(double lon) { return lon; }
+
+inline double project_lat(double lat) {
+  return rad_to_deg(log(tan(deg_to_rad(lat) / 2 + M_PI / 4)));
+}
+inline double project_lon(double lon) { return lon; }
+
+inline gpt_units_t lat_to_yu(double lat) {
+  // after projection range becomes -180..+180 assuming we clamped value to
+  // -85..+85.
+  // todo: should we use round() or we can just truncate is fine?
+  return static_cast<uint32_t>(
+      ((lat_to_y_r(deg_to_rad(lat)) + M_PI) / (2 * M_PI)) *
+      std::numeric_limits<uint32_t>::max());
+}
+inline gpt_units_t lon_to_xu(double lon) {
+  return static_cast<uint32_t>(((lon + 180.0) / 360.0) *
+                               std::numeric_limits<uint32_t>::max());
+}
+} // namespace mercator
+
 } // namespace gg

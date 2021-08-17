@@ -3,7 +3,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 namespace {
-const size_t RESERVED_VERTEX_DATA_SIZE = 10 * 1024 * 1024;
+const size_t RESERVED_VERTEX_DATA_SIZE = 100 * 1024 * 1024;
 }
 
 bool RoadsUnit::load_shaders(std::string shaders_root) {
@@ -47,8 +47,10 @@ bool RoadsUnit::make_buffers() {
   glBindVertexArray(m_aa_vao);
   glBindBuffer(GL_ARRAY_BUFFER, m_aa_vbo);
   const size_t aa_one_triangle_size =
-      6 * (2 * sizeof(uint32_t) + 4 * sizeof(float)); // one vertex is 2 coords + 4 color components, 6 vertices in total.
-  glBufferData(GL_ARRAY_BUFFER, aa_one_triangle_size * 100'000, nullptr,
+      6 * (2 * sizeof(uint32_t) +
+           4 * sizeof(float)); // one vertex is 2 coords + 4 color components, 6
+                               // vertices in total.
+  glBufferData(GL_ARRAY_BUFFER, aa_one_triangle_size * 100'000'00, nullptr,
                GL_DYNAMIC_DRAW);
   glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(ColoredVertex),
                         (void *)offsetof(ColoredVertex, vertex));
@@ -63,13 +65,14 @@ bool RoadsUnit::make_buffers() {
 
 void RoadsUnit::set_data(span<p32> vertex_data,
                          span<ColoredVertex> aa_vertex_data) {
+  auto upload_start_time = std::chrono::steady_clock::now();
+
   glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
   glBufferSubData(GL_ARRAY_BUFFER, 0,
                   vertex_data.size() * sizeof(vertex_data[0]),
                   vertex_data.data());
   glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
   m_vertices_uploaded = vertex_data.size();
-  log_debug("road triangles vertices count: {}", m_vertices_uploaded);
 
   glBindBuffer(GL_ARRAY_BUFFER, m_aa_vbo);
   glBufferSubData(GL_ARRAY_BUFFER, 0,
@@ -77,7 +80,18 @@ void RoadsUnit::set_data(span<p32> vertex_data,
                   aa_vertex_data.data());
   glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
   m_aa_vertices_uploaded = aa_vertex_data.size();
-  log_debug("road aa triangles vertices count: {}", m_aa_vertices_uploaded);  
+
+  auto upload_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - upload_start_time);
+
+  auto total_size = vertex_data.size() * sizeof(vertex_data[0]) +
+                    aa_vertex_data.size() * sizeof(aa_vertex_data[0]);
+
+  log_debug("road triangles vertices count: {}k", m_vertices_uploaded / 1000);
+  log_debug("road aa triangles vertices count: {}k",
+            m_aa_vertices_uploaded / 1000);
+  log_debug("total size: {}MB", total_size / 1024 / 1024);
+  log_debug("driver upload time: {}ms", upload_time.count());
 }
 
 /*virtual*/

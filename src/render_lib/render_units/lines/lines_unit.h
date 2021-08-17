@@ -84,7 +84,7 @@ public:
     }
     assert(m_vao != -1);
 
-    log_debug("reuploaded {} vertices", m_geometry.size());
+    //log_debug("reuploaded {} vertices", m_geometry.size());
 
     glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0,

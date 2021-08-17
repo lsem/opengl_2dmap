@@ -13,6 +13,7 @@
 #include "render_lib/shader_program.h"
 
 struct ColoredVertex {
+  ColoredVertex() {}
   ColoredVertex(p32 vertex, Color color) : vertex(vertex), color(color) {}
   p32 vertex;
   Color color;
