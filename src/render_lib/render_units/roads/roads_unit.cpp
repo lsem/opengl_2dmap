@@ -74,12 +74,12 @@ void RoadsUnit::set_data(span<p32> vertex_data,
   glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
   m_vertices_uploaded = vertex_data.size();
 
-  glBindBuffer(GL_ARRAY_BUFFER, m_aa_vbo);
-  glBufferSubData(GL_ARRAY_BUFFER, 0,
-                  aa_vertex_data.size() * sizeof(aa_vertex_data[0]),
-                  aa_vertex_data.data());
-  glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
-  m_aa_vertices_uploaded = aa_vertex_data.size();
+  // glBindBuffer(GL_ARRAY_BUFFER, m_aa_vbo);
+  // glBufferSubData(GL_ARRAY_BUFFER, 0,
+  //                 aa_vertex_data.size() * sizeof(aa_vertex_data[0]),
+  //                 aa_vertex_data.data());
+  // glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
+  // m_aa_vertices_uploaded = aa_vertex_data.size();
 
   auto upload_time = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - upload_start_time);
@@ -105,11 +105,11 @@ void RoadsUnit::render_frame(const camera::Cam2d &cam) /*override*/ {
   glBindVertexArray(0);
   m_shader->detach();
 
-  m_aa_shader->attach();
-  glUniformMatrix4fv(glGetUniformLocation(m_aa_shader->id, "proj"), 1, GL_FALSE,
-                     glm::value_ptr(proj));
-  glBindVertexArray(m_aa_vao);
-  glDrawArrays(GL_TRIANGLES, 0, m_aa_vertices_uploaded);
-  glBindVertexArray(0);
-  m_aa_shader->detach();
+  // m_aa_shader->attach();
+  // glUniformMatrix4fv(glGetUniformLocation(m_aa_shader->id, "proj"), 1, GL_FALSE,
+  //                    glm::value_ptr(proj));
+  // glBindVertexArray(m_aa_vao);
+  // glDrawArrays(GL_TRIANGLES, 0, m_aa_vertices_uploaded);
+  // glBindVertexArray(0);
+  // m_aa_shader->detach();
 }

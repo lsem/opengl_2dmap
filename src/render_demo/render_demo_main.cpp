@@ -32,6 +32,8 @@
 #include "render_units/lines/lines_unit.h"
 #include "render_units/roads/roads_unit.h"
 #include "render_units/roads/tesselation.h"
+#include "render_units/roads_shader_aa/make_geometry.h"
+#include "render_units/roads_shader_aa/roads_shader_aa_unit.h"
 #include "render_units/triangle/render_triangle.h"
 
 #include "render_lib/shader_program.h"
@@ -96,8 +98,134 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
 
+std::tuple<vector<roads_shader_aa::AAVertex>, vector<uint32_t>, vector<p32>,
+           DebugCtx>
+generate_test_scene2(v2 scene_origin, float zoom) {
+  vector<p32> all_roads_triangles(10'000'000); // todo: calculate size correctly
+  vector<roads_shader_aa::AAVertex> all_roads_aa_triangles(10'000'000);
+
+  double scale = 1000;
+  auto p1 = scene_origin;
+  auto p2 = p1 + v2(10, 10) * scale;
+  auto p3 = p2 + v2(10, -20) * scale;
+  auto p4 = p3 + v2(0, 20) * scale;
+  vector<p32> road_one{from_v2(p1), from_v2(p2), from_v2(p3), from_v2(p4)};
+
+  const size_t vertex_count = (road_one.size() - 1) * 12;
+  span<p32> road_one_span(all_roads_triangles.data(), vertex_count);
+  vector<p32> outline(road_one.size() * 2);
+
+  DebugCtx ctx;
+
+  roads::tesselation::generate_geometry<roads::tesselation::FirstPassSettings>(
+      road_one, road_one_span, outline, 2000.0, ctx);
+  all_roads_triangles.resize(vertex_count);
+
+  vector<roads_shader_aa::AAVertex> all_vertices(1000'000);
+  vector<uint32_t> all_indices(1000'000);
+
+  auto [verices_num, indices_num] =
+      roads_shader_aa::make_geometry(outline, all_vertices, all_indices, 1.5);
+  all_vertices.resize(verices_num);
+  all_indices.resize(indices_num);
+  for (auto &v : all_vertices) {
+    v.color[0] = 0.83;
+    v.color[1] = 0.54;
+    v.color[2] = 0.55;
+  }
+
+  log_debug("vertices number: {}", verices_num);
+  log_debug("indices number: {}", indices_num);
+
+  //  Do what opengl supposed to be in indexed drawing mode.
+  // for (size_t i = 2; i < all_indices.size(); i += 3) {
+  //   ctx.add_line(all_vertices[all_indices[i - 2]],
+  //                all_vertices[all_indices[i - 1]], colors::grey);
+  //   ctx.add_line(all_vertices[all_indices[i - 1]],
+  //   all_vertices[all_indices[i]],
+  //                colors::grey);
+  //   ctx.add_line(all_vertices[all_indices[i]], all_vertices[all_indices[i -
+  //   2]],
+  //                colors::grey);
+  // }
+
+  return tuple{std::move(all_vertices), std::move(all_indices),
+               std::move(all_roads_triangles), std::move(ctx)};
+}
+
 std::tuple<vector<p32>, vector<ColoredVertex>, DebugCtx>
-generate_random_roads(float cam_zoom) {
+generate_test_scene(v2 scene_origin) {
+
+  vector<p32> all_roads_triangles(10'000'000); // todo: calculate size correctly
+  vector<p32> all_roads_aa_triangles(10'000'000);
+
+  double scale = 1000;
+  auto p1 = scene_origin;
+  auto p2 = p1 + v2(10, 10) * scale;
+  auto p3 = p2 + v2(10, -20) * scale;
+  auto p4 = p3 + v2(0, 20) * scale;
+  vector<p32> road_one{from_v2(p1), from_v2(p2), from_v2(p3), from_v2(p4)};
+
+  const size_t vertex_count = (road_one.size() - 1) * 12;
+  span<p32> road_one_span(all_roads_triangles.data(), vertex_count);
+  vector<p32> outline(road_one.size() * 2);
+
+  DebugCtx ctx;
+
+  roads::tesselation::generate_geometry<roads::tesselation::FirstPassSettings>(
+      road_one, road_one_span, outline, 2000.0, ctx);
+
+  const size_t aa_vertex_count = (outline.size() - 1) * 12;
+  span<p32> aa_data_span(all_roads_aa_triangles.data(), aa_vertex_count);
+
+  vector<p32> no_outline_for_aa_pass; // just fake placeholder.
+  roads::tesselation::generate_geometry<roads::tesselation::AAPassSettings>(
+      outline, aa_data_span, no_outline_for_aa_pass, 100,
+      ctx); // in world coordiantes try smth like 200.0
+
+  // Given a road polyline, we need to generate vertices and
+  //  indicies.
+  // for aa we need to produce two vertices for each point of outline and
+  // indicices that makes vertices. then this indicies will produce vertices,
+  // and we need to pass vector V along with that vertex.
+  // this information will be used by shader for calculating.
+  // Given outline I want to generate
+
+  // I already have outline, what I need is to produce two indices for the same
+  // points of outline and specify vector for that point. then, so I will have
+  // two vertices with same information, how am I supposed to figure out which
+  // one is internal and which one is external? one approach is to use vertex
+  // id. but what if that does not scale? are there any other ways?
+
+  // for each point of outline, we produce two vertices v1, v2.
+  // then we make two triangles with previous vetices v1', v2':
+  //  indices.push_back(index(v1'))
+  //  indices.push_back(index(v2))
+  //  indices.push_back(index(v1))
+  //  indices.push_back(index(v2'))
+  //  indices.push_back(index(v2))
+  //  indices.push_back(index(v1))
+
+  all_roads_triangles.resize(vertex_count);
+  all_roads_aa_triangles.resize(aa_vertex_count);
+
+  vector<ColoredVertex> aa_data(aa_vertex_count);
+  const auto COLOR = Color{0.53, 0.54, 0.55, 1.0};
+  const auto NOCOLOR = Color{1.0f, 1.0f, 1.0f, 1.0f}; // color of glClearCOLOR
+  const vector<Color> AA_VERTEX_COLORS_PATTERN = {COLOR,   NOCOLOR, NOCOLOR,
+                                                  NOCOLOR, COLOR,   COLOR};
+  std::transform(
+      std::begin(all_roads_aa_triangles), std::end(all_roads_aa_triangles),
+      std::begin(aa_data), [i = 0, &AA_VERTEX_COLORS_PATTERN](p32 x) mutable {
+        return ColoredVertex(
+            x, AA_VERTEX_COLORS_PATTERN[i++ % AA_VERTEX_COLORS_PATTERN.size()]);
+      });
+
+  return std::tuple{all_roads_triangles, aa_data, ctx};
+}
+
+std::tuple<vector<p32>, vector<ColoredVertex>, DebugCtx>
+generate_random_roads(v2 scene_origin, float cam_zoom) {
   DebugCtx dctx;
 
   //
@@ -118,9 +246,8 @@ generate_random_roads(float cam_zoom) {
     int random_segments_count = rand() % 30 + 30;
     double random_vector_angle = ((rand() % 360) / 360.0) * 2 * M_PI;
     const int scater = 60000;
-    v2 origin =
-        v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y} +
-        (v2{rand() % scater - (scater / 2), rand() % scater - (scater / 2)});
+    v2 origin = scene_origin + (v2{rand() % scater - (scater / 2),
+                                   rand() % scater - (scater / 2)});
     v2 prev_p = origin;
 
     vector<p32> random_polyline = {from_v2(prev_p)};
@@ -321,7 +448,7 @@ int main() {
 
   // cam.focus_pos = triangle.triangle_center();
   cam.focus_pos = glm::vec2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y};
-  cam.zoom = 0.1;
+  cam.zoom = 1.0;
 
   RoadsUnit roads;
   if (!roads.load_shaders(SHADERS_ROOT)) {
@@ -333,15 +460,39 @@ int main() {
     return -1;
   }
 
-  auto [roads_data, roads_aa_data, dctx] = generate_random_roads(cam.zoom);
+  roads_shader_aa::RoadsShaderAAUnit roads_shaders_aa;
+  if (!roads_shaders_aa.load_shaders(SHADERS_ROOT)) {
+    log_err("failed loading shaders for roads_shaders_aa");
+    return -1;
+  }
+  if (!roads_shaders_aa.make_buffers()) {
+    log_err("failed creating buffers roads_shaders_aa");
+    return -1;
+  }
+
+  auto [roads_data, roads_aa_data, dctx] =
+      generate_test_scene(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y});
+  // generate_random_roads(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
   roads.set_data(roads_data, roads_aa_data);
+
+  auto [aa_vertices, aa_indices, road_vertices, aa_ctx] =
+      generate_test_scene2(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
+  roads_shaders_aa.set_data(aa_vertices, aa_indices);
+
+  roads.set_data(road_vertices, {});
 
   // Debug context lines.
   vector<tuple<v2, v2, Color>> lines_v2;
-  for (auto [a, b, c] : dctx.lines) {
+
+  log_debug("aa_ctx.lines: {}", aa_ctx.lines.size());
+  for (auto [a, b, c] : aa_ctx.lines) {
     lines_v2.push_back(tuple{v2{a}, v2{b}, c});
   }
-  LinesUnit road_dbg_lines{(unsigned)dctx.lines.size()};
+
+  // for (auto [a, b, c] : dctx.lines) {
+  //    lines_v2.push_back(tuple{v2{a}, v2{b}, c});
+  // }
+  LinesUnit road_dbg_lines{(unsigned)aa_ctx.lines.size()};
   if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
     std::cerr << "failed initializing renderer for road_dbg_lines\n";
     glfwTerminate();
@@ -349,9 +500,14 @@ int main() {
   }
   road_dbg_lines.assign_lines(lines_v2);
 
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  static float clear_color[3] = {1.0f, 1.0f, 1.0f};
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClearColor(clear_color[0], clear_color[1], clear_color[2], 1.0);
+    // glClearColor(0.53, 0.48, 0.42, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     update_fps_counter(window);
     process_input(window);
@@ -373,11 +529,12 @@ int main() {
     road_dbg_lines.render_frame(cam);
     triangle.render_frame(cam);
     roads.render_frame(cam);
+    roads_shaders_aa.render_frame(cam);
     if (g_show_crosshair) {
       crosshair.render_frame(cam);
     }
 
-    ImGui::Text("Hello, world %d", 123);
+    ImGui::ColorEdit3("Clear color", clear_color);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
