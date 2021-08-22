@@ -125,7 +125,7 @@ generate_test_scene2(v2 scene_origin, float zoom) {
   vector<uint32_t> all_indices(1000'000);
 
   auto [verices_num, indices_num] =
-      roads_shader_aa::make_geometry(outline, all_vertices, all_indices, 1.5);
+      roads_shader_aa::make_geometry(outline, 1.5, all_vertices, all_indices);
   all_vertices.resize(verices_num);
   all_indices.resize(indices_num);
   for (auto &v : all_vertices) {
@@ -503,11 +503,11 @@ int main() {
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  static float clear_color[3] = {1.0f, 1.0f, 1.0f};
+  static float clear_color[4] = {0.415, 0.452, 0.529, 1.0};
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
-    glClearColor(clear_color[0], clear_color[1], clear_color[2], 1.0);
-    // glClearColor(0.53, 0.48, 0.42, 1);
+    glClearColor(clear_color[0], clear_color[1], clear_color[2],
+                 clear_color[3]);
     glClear(GL_COLOR_BUFFER_BIT);
     update_fps_counter(window);
     process_input(window);
@@ -534,7 +534,7 @@ int main() {
       crosshair.render_frame(cam);
     }
 
-    ImGui::ColorEdit3("Clear color", clear_color);
+    ImGui::ColorEdit4("Clear color", clear_color);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

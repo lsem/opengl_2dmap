@@ -15,22 +15,56 @@ namespace roads_shader_aa {
            \    \p3 \
 */
 // Generate aa geometry and data needed for shader needed for polylong aa.
-static std::tuple<size_t, size_t> make_geometry(span<p32> polyline,
-                                                span<AAVertex> out_vertices,
-                                                span<uint32_t> out_indices,
-                                                double width) {
-  // to draw by two points, we need to have some special handling
-  // which I have not implemented yet.
-  assert(polyline.size() > 2);
-  if (polyline.size() < 3) {
-    log_warn("line with less than 3 points");
-    return {-1, -1};
+template <class EventHandler> struct ExtrudePolyline : public EventHandler {
+  template <typename... Args>
+  ExtrudePolyline(Args... args) : EventHandler(args...) {}
+
+  void extrude_polyline(span<p32> polyline, double width) {
+    assert(polyline.size() > 2);
+    if (polyline.size() < 3) {
+      log_err("line with less than 3 points");
+      return;
+    }
+
+    const size_t N = polyline.size();
+    v2 prev_d;
+    for (size_t i = 0; i < N; ++i) {
+      v2 p1(polyline[(i + N - 1) % N]);
+      v2 p2(polyline[i]);
+      v2 p3(polyline[(i + 1) % N]);
+      v2 a(p1, p2);
+      v2 b(p2, p3);
+      v2 t1 = normalized(v2(-a.y, a.x)) * width;
+      v2 t2 = normalized(v2(-b.y, b.x)) * width;
+
+      v2 d;
+      if (unlikely(
+              !gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d))) {
+        log_warn("parallel lines at {},{},{}", i - 2, i - 1, i);
+        continue;
+      }
+
+      if (unlikely(i == 0)) { // first iteration
+        prev_d = p1 + t1;
+        EventHandler::first(p1, prev_d);
+      }
+
+      EventHandler::next(p2, d);
+      prev_d = d;
+    }
   }
+};
 
-  size_t vi = 0;
-  size_t ii = 0;
+struct PolylineAAHandler {
+  span<AAVertex> out_vertices;
+  span<uint32_t> out_indices;
+  size_t vi;
+  size_t ii;
 
-  auto on_first_pair = [&](v2 p, v2 d) {
+  PolylineAAHandler(span<AAVertex> out_vertices, span<uint32_t> out_indices)
+      : out_vertices(out_vertices), out_indices(out_indices), vi(0), ii(0) {}
+
+  void first(v2 p, v2 d) {
     out_vertices[vi].coords.x = static_cast<uint32_t>(std::round(p.x));
     out_vertices[vi].coords.y = static_cast<uint32_t>(std::round(p.y));
     out_vertices[vi].is_outer = 0;
@@ -46,9 +80,8 @@ static std::tuple<size_t, size_t> make_geometry(span<p32> polyline,
     out_vertices[vi + 1].is_outer = 1;
 
     vi += 2;
-  };
-
-  auto on_next_pair = [&](v2 p, v2 d) {
+  }
+  void next(v2 p, v2 d) {
     // -----------------------------------
     //
     //  prev_d            d
@@ -89,65 +122,16 @@ static std::tuple<size_t, size_t> make_geometry(span<p32> polyline,
     out_indices[ii++] = i_p1;
     out_indices[ii++] = i_d;
     out_indices[ii++] = i_p2;
-  };
-
-  // Process polyline by overving 3 adjacent vertices
-  v2 prev_d;
-  for (size_t i = 2; i < polyline.size(); ++i) {
-    v2 p1(polyline[i - 2]);
-    v2 p2(polyline[i - 1]);
-    v2 p3(polyline[i]);
-
-    // t1, t2: perpendiculars to a and b
-    v2 a(p1, p2);
-    v2 b(p2, p3);
-    v2 t1 = normalized(v2(-a.y, a.x)) * width;
-    v2 t2 = normalized(v2(-b.y, b.x)) * width;
-
-    v2 d;
-    if (unlikely(!gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d))) {
-      // in this case we can can just skip the point,
-      // this must be something wrong with compilation side of the map.
-      log_warn("parallel lines at {},{},{}", i - 2, i - 1, i);
-
-      // todo: fix me.
-      // that is the problem: if we emit a point in the same place
-      // where previous point this would get algorithm nuts on second AA-pass.
-      // possible fix is to skip such points in algorithm or emit something on
-      // the same line.
-      // on_outline_point(prev_d, prev_e);
-      assert(false);
-
-      continue;
-    }
-
-    //  prev_d       d
-    //  o------------o
-    //  |            |
-    //  o------------o
-    //  p1          p2
-
-    if (unlikely(i == 2)) { // first iteration
-      prev_d = p1 + t1;
-      // on_first_pair(p1, prev_d);
-      on_first_pair(p1, prev_d);
-    }
-
-    on_next_pair(p2, d);
-
-    prev_d = d;
   }
+};
 
-  // Handle end.
-  auto p1 = polyline[polyline.size() - 2];
-  auto p2 = polyline[polyline.size() - 1];
-  v2 a(p1, p2);
-  v2 perp_a = normalized(v2(-a.y, a.x)) * width;
-  v2 d = p2 + perp_a;
-
-  on_next_pair(p2, d);
-
-  return tuple{vi, ii};
+static std::tuple<size_t, size_t> make_geometry(span<p32> polyline,
+                                                double width,
+                                                span<AAVertex> out_vertices,
+                                                span<uint32_t> out_indices) {
+  ExtrudePolyline<PolylineAAHandler> extrude(out_vertices, out_indices);
+  extrude.extrude_polyline(polyline, width);
+  return {extrude.vi, extrude.ii};
 }
 
 } // namespace roads_shader_aa
