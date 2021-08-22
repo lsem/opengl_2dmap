@@ -61,7 +61,8 @@
         "typeinfo": "cpp",
         "span": "cpp",
         "map": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "*.ipp": "cpp"
     },
     "editor.fontLigatures": true,
     "editor.renderIndentGuides": false,
