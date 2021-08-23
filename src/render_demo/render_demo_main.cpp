@@ -246,8 +246,8 @@ generate_random_roads(v2 scene_origin, float cam_zoom) {
     int random_segments_count = rand() % 30 + 30;
     double random_vector_angle = ((rand() % 360) / 360.0) * 2 * M_PI;
     const int scater = 60000;
-    v2 origin = scene_origin + (v2{rand() % scater - (scater / 2),
-                                   rand() % scater - (scater / 2)});
+    v2 origin = scene_origin + (v2(rand() % scater - (scater / 2),
+                                   rand() % scater - (scater / 2)));
     v2 prev_p = origin;
 
     vector<p32> random_polyline = {from_v2(prev_p)};
@@ -471,12 +471,12 @@ int main() {
   }
 
   auto [roads_data, roads_aa_data, dctx] =
-      generate_test_scene(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y});
+      generate_test_scene(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y));
   // generate_random_roads(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
   roads.set_data(roads_data, roads_aa_data);
 
   auto [aa_vertices, aa_indices, road_vertices, aa_ctx] =
-      generate_test_scene2(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
+      generate_test_scene2(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y), cam.zoom);
   roads_shaders_aa.set_data(aa_vertices, aa_indices);
 
   roads.set_data(road_vertices, {});
