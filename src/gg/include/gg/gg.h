@@ -71,7 +71,7 @@ struct tile_at_level_t {
 tile_id_t tile_id_by_pt(gpt_t pt, uint32_t level);
 gbb_t tile_bb(tile_at_level_t tile);
 
-tile_at_level_t root_tile() { return {0, 0}; }
+tile_at_level_t root_tile();
 tile_at_level_t parent_tile(tile_at_level_t);
 std::array<tile_id_t, 4> children_tiles(tile_at_level_t);
 

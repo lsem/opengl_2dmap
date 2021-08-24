@@ -47,10 +47,10 @@ tile_at_level_t parent_tile(tile_at_level_t tile) {
 }
 std::array<tile_id_t, 4> children_tiles(tile_at_level_t tile) {
     std::array<tile_id_t, 4> res = {
-        tile_id_t{tile.id.x * 2 + 0, tile.id.y * 2 + 0},
-        tile_id_t{tile.id.x * 2 + 1, tile.id.y * 2 + 0},
-        tile_id_t{tile.id.x * 2 + 0, tile.id.y * 2 + 1},
-        tile_id_t{tile.id.x * 2 + 1, tile.id.y * 2 + 1} };
+        tile_id_t{static_cast<uint16_t>(tile.id.x * 2 + 0), static_cast<uint16_t>(tile.id.y * 2 + 0)},
+        tile_id_t{static_cast<uint16_t>(tile.id.x * 2 + 1), static_cast<uint16_t>(tile.id.y * 2 + 0)},
+        tile_id_t{static_cast<uint16_t>(tile.id.x * 2 + 0), static_cast<uint16_t>(tile.id.y * 2 + 1)},
+        tile_id_t{static_cast<uint16_t>(tile.id.x * 2 + 1), static_cast<uint16_t>(tile.id.y * 2 + 1)}};
     return res;
 }
 
