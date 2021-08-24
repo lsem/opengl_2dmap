@@ -1,12 +1,12 @@
 #include <errno.h>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <fstream>
 
-#include "glad/glad.h"
 #include "common/log.h"
+#include "glad/glad.h"
 
 #pragma once
 
@@ -29,13 +29,16 @@ bool load_file_content(std::filesystem::path fpath, std::string &out_data) {
 } // namespace
 
 struct ShaderProgram {
-  unsigned id;
+  unsigned id = ~0u;
 
   ShaderProgram(unsigned id) : id(id) {}
 
   bool compile() { return false; }
 
-  void attach() { glUseProgram(this->id); }
+  void attach() {
+    assert(this->id != ~0u);
+    glUseProgram(this->id);
+  }
   void detach() { glUseProgram(0); }
 
   ShaderProgram(const ShaderProgram &) = delete;

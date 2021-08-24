@@ -6,5 +6,6 @@ add_executable(render_demo ${RENDERDEMO_H_FILES} ${RENDERDEMO_CPP_FILES})
 #target_include_directories(render_demo PRIVATE "include/")
 target_include_directories(render_demo PRIVATE ".")
 set_target_properties(render_demo PROPERTIES CXX_STANDARD "17")
-target_link_libraries(render_demo PRIVATE glfw common render_lib glad)
+target_link_libraries(render_demo PRIVATE glfw common render_lib glad mapbox_earcut)
+target_link_libraries(render_demo PRIVATE map_compiler)
 

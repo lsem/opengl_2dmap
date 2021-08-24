@@ -6,8 +6,6 @@ namespace gg {
 
 #define EXTERN
 
-constexpr auto U32_MAX = std::numeric_limits<uint32_t>::max();
-
 // new methods.
 EXTERN gpt_units_t lat_to_y(double lat) {
   return U32_MAX / 360.0 * (lat + 90.0);

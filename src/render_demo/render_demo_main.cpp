@@ -29,6 +29,7 @@
 #include "render_lib/camera_control.h"
 #include "render_lib/camera_control_visuals.h"
 #include "render_units/crosshair/crosshair_unit.h"
+#include "render_units/lands/lands.h"
 #include "render_units/lines/lines_unit.h"
 #include "render_units/roads/roads_unit.h"
 #include "render_units/roads/tesselation.h"
@@ -42,6 +43,10 @@
 #include <imgui/imgui_impl_glfw.h>
 #include <imgui/imgui_impl_opengl3.h>
 
+#include <mapbox/earcut.hpp>
+
+#include <map_compiler_lib.h>
+
 using camera::Cam2d;
 using camera_control::CameraControl;
 
@@ -51,8 +56,8 @@ bool g_wireframe_mode = false;
 bool g_prev_wireframe_mode = false;
 bool g_show_crosshair = false;
 
-uint32_t MASTER_ORIGIN_X = 100'000'00;
-uint32_t MASTER_ORIGIN_Y = 100'000'00;
+uint32_t MASTER_ORIGIN_X = gg::U32_MAX / 2;
+uint32_t MASTER_ORIGIN_Y = gg::U32_MAX / 2;
 
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
@@ -96,6 +101,77 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   // make sure the viewport matches the new window dimensions; note that width
   // and height will be significantly larger than specified on retina displays.
   glViewport(0, 0, width, height);
+}
+
+void print_coords_debug_info(const Cam2d &cam, double cx, double cy) {
+  glm::vec2 q = cam.unproject(glm::vec2{cx, cy});
+  auto x = static_cast<uint32_t>(q.x);
+  auto y = static_cast<uint32_t>(q.y);
+  double lat = gg::mercator::yu_to_lat(y);
+  double lon = gg::mercator::xu_to_lon(x);
+  log_debug("Click: {},{} (x: {}, y:{})", lat, lon, x, y);
+}
+
+std::optional<std::tuple<vector<p32>, vector<uint32_t>>>
+generate_lands_quads(DebugCtx &dctx) {
+  vector<p32> vertices;
+  vector<uint32_t> indices;
+  try {
+    if (!std::getenv("DATA_ROOT")) {
+      throw std::runtime_error("No DATA_ROOT specified");
+    }
+    const auto data_root_str = std::string(std::getenv("DATA_ROOT"));
+    auto lands_path = fs::path(data_root_str) / "natural_earth" /
+                      "ne_10m_land" / "ne_10m_land.shp";
+    auto lands_shapes = map_compiler::load_shapes(lands_path);
+    unsigned total_parts = 0;
+    for (auto &shape : lands_shapes) {
+      for (auto &part : shape) {
+        // Convert part vertices into mapbox::earcut format which
+        // expects polygin defined as vector of vectors which means
+        // main polygon and holes.
+        vector<vector<array<double, 2>>> earcut_polygon;
+        earcut_polygon.push_back({});
+        for (auto &[x, y] : part) {
+          earcut_polygon.back().push_back({x, y});
+        }
+        assert(earcut_polygon.size() == 1);
+        auto earcut_indices = mapbox::earcut(earcut_polygon);
+        // One more pass over part to create dual vector with points in our
+        // renderer format with idea to use just indices produced by earcut.
+        auto pen = dctx.make_pen();
+        bool first = true;
+        const size_t k = vertices.size();
+        for (auto &[lon, lat] : part) {
+          lon = gg::mercator::clamp_lon_to_valid(lon);
+          lat = gg::mercator::clamp_lat_to_valid(lat);
+          auto px = gg::mercator::lon_to_xu(lon);
+          auto py = gg::mercator::lat_to_yu(lat);
+          vertices.push_back(p32{px, py});
+          if (first) {
+            first = false;
+            pen.move_to(p32{px, py});
+          } else {
+            const vector<Color> colors = {colors::red, colors::green,
+                                          colors::blue, colors::magenta,
+                                          colors::grey};
+            pen.line_to(p32{px, py}, colors[total_parts % colors.size()]);
+          }
+        }
+        for (auto idx : earcut_indices) {
+          indices.push_back(idx + k);
+        }
+        assert(indices.size() % 3 == 0);
+      }
+    }
+
+    log_debug("vertices.size: {}", vertices.size());
+  } catch (const std::exception &e) {
+    log_err("failed compiling lands: {}", e.what());
+    return std::nullopt;
+  }
+
+  return std::tuple{std::move(vertices), std::move(indices)};
 }
 
 std::tuple<vector<roads_shader_aa::AAVertex>, vector<uint32_t>, vector<p32>,
@@ -246,8 +322,8 @@ generate_random_roads(v2 scene_origin, float cam_zoom) {
     int random_segments_count = rand() % 30 + 30;
     double random_vector_angle = ((rand() % 360) / 360.0) * 2 * M_PI;
     const int scater = 60000;
-    v2 origin = scene_origin + (v2{rand() % scater - (scater / 2),
-                                   rand() % scater - (scater / 2)});
+    v2 origin = scene_origin + (v2(rand() % scater - (scater / 2),
+                                   rand() % scater - (scater / 2)));
     v2 prev_p = origin;
 
     vector<p32> random_polyline = {from_v2(prev_p)};
@@ -402,6 +478,11 @@ int main() {
   glfw_helpers::GLFWMouseController::set_mouse_button_callback(
       [&cam_control, &cam](GLFWwindow *wnd, int btn, int act, int mods) {
         cam_control.mouse_click(wnd, btn, act, mods);
+        if (btn == GLFW_MOUSE_BUTTON_LEFT) {
+          double cx, cy;
+          glfwGetCursorPos(wnd, &cx, &cy);
+          print_coords_debug_info(cam, cx, cy);
+        }
       });
   glfw_helpers::GLFWMouseController::set_mouse_scroll_callback(
       [&cam, &cam_control](GLFWwindow *wnd, double xoffset, double yoffset) {
@@ -448,7 +529,7 @@ int main() {
 
   // cam.focus_pos = triangle.triangle_center();
   cam.focus_pos = glm::vec2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y};
-  cam.zoom = 1.0;
+  cam.zoom = 7.227499802162154e-07;
 
   RoadsUnit roads;
   if (!roads.load_shaders(SHADERS_ROOT)) {
@@ -471,28 +552,43 @@ int main() {
   }
 
   auto [roads_data, roads_aa_data, dctx] =
-      generate_test_scene(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y});
-  // generate_random_roads(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
+      generate_test_scene(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y));
+  // generate_random_roads(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y), cam.zoom);
   roads.set_data(roads_data, roads_aa_data);
 
   auto [aa_vertices, aa_indices, road_vertices, aa_ctx] =
-      generate_test_scene2(v2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y}, cam.zoom);
+      generate_test_scene2(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y), cam.zoom);
   roads_shaders_aa.set_data(aa_vertices, aa_indices);
 
   roads.set_data(road_vertices, {});
 
+  DebugCtx lands_dctx;
+  lands::Lands lands;
+  auto maybe_lands = generate_lands_quads(lands_dctx);
+  if (maybe_lands) {
+    auto [lands_points, lands_indices] = *maybe_lands;
+    if (!lands.load_shaders(SHADERS_ROOT)) {
+      log_err("failed loading lands shaders");
+      return -1;
+    }
+    if (!lands.make_buffers()) {
+      log_err("failed making lands buffers");
+      return -1;
+    }
+    log_debug("lands_points: {}", lands_points.size());
+    log_debug("lands_indices: {}", lands_indices.size());
+    lands.set_data(lands_points, lands_indices);
+  } else {
+    log_warn("Lands will not be displayed");
+  }
+
   // Debug context lines.
   vector<tuple<v2, v2, Color>> lines_v2;
-
-  log_debug("aa_ctx.lines: {}", aa_ctx.lines.size());
-  for (auto [a, b, c] : aa_ctx.lines) {
+  for (auto [a, b, c] : lands_dctx.lines) {
     lines_v2.push_back(tuple{v2{a}, v2{b}, c});
   }
 
-  // for (auto [a, b, c] : dctx.lines) {
-  //    lines_v2.push_back(tuple{v2{a}, v2{b}, c});
-  // }
-  LinesUnit road_dbg_lines{(unsigned)aa_ctx.lines.size()};
+  LinesUnit road_dbg_lines{(unsigned)lines_v2.size()};
   if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
     std::cerr << "failed initializing renderer for road_dbg_lines\n";
     glfwTerminate();
@@ -500,10 +596,29 @@ int main() {
   }
   road_dbg_lines.assign_lines(lines_v2);
 
+  LinesUnit world_frame_lines(4);
+  if (!world_frame_lines.load_shaders(SHADERS_ROOT)) {
+    log_err("failed loading lines unit shaders for world frame");
+    return -1;
+  }
+  vector<LinesUnit::line_type> world_lines;
+  world_lines.emplace_back(gg::v2(0, 0), gg::v2(gg::U32_MAX, 0), colors::red);
+  world_lines.emplace_back(gg::v2(gg::U32_MAX, 0),
+                           gg::v2(gg::U32_MAX, gg::U32_MAX), colors::green);
+  world_lines.emplace_back(gg::v2(gg::U32_MAX, gg::U32_MAX),
+                           gg::v2(0, gg::U32_MAX), colors::blue);
+  world_lines.emplace_back(gg::v2(0, gg::U32_MAX), gg::v2(0, 0),
+                           colors::magenta);
+  world_frame_lines.assign_lines(world_lines);
+
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  static float clear_color[4] = {0.415, 0.452, 0.529, 1.0};
+  bool draw_debug_lines = true;
+  bool show_world_bb = true;
+  bool show_lands = true;
+  static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
+
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
     glClearColor(clear_color[0], clear_color[1], clear_color[2],
@@ -526,15 +641,27 @@ int main() {
     };
 
     cam_control_vis.render(cam, cam_control);
-    road_dbg_lines.render_frame(cam);
+    if (draw_debug_lines) {
+      road_dbg_lines.render_frame(cam);
+    }
     triangle.render_frame(cam);
     roads.render_frame(cam);
     roads_shaders_aa.render_frame(cam);
+
+    if (show_lands) {
+      lands.render_frame(cam);
+    }
+    if (show_world_bb) {
+      world_frame_lines.render_frame(cam);
+    }
     if (g_show_crosshair) {
       crosshair.render_frame(cam);
     }
 
     ImGui::ColorEdit4("Clear color", clear_color);
+    ImGui::Checkbox("Draw debug lines", &draw_debug_lines);
+    ImGui::Checkbox("Show world BB", &show_world_bb);
+    ImGui::Checkbox("Show Lands", &show_lands);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

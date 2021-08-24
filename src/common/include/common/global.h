@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 #include <tuple>
+#include <filesystem>
 
 #include "span.hpp"
 
@@ -19,3 +20,5 @@ using nonstd::span;
 
 using gg::p32;
 using gg::v2;
+
+namespace fs = std::filesystem;

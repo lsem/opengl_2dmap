@@ -100,7 +100,7 @@ public:
     cam().zoom =
         cam().zoom * pow(2, yoffset * 0.1); // zoom slightly more in than out.
     log_debug("camera-zoom: {}", cam().zoom);
-    cam().zoom = std::clamp(cam().zoom, 0.000212537, 1000.0);
+    cam().zoom = std::clamp(cam().zoom, 0.00000000212537, 1000.0);
     auto mouse_pos_after_zoom_world = cam().unproject(glm::vec2{cx, cy});
     auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
     cam().focus_pos -= diff;

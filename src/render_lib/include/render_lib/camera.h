@@ -15,7 +15,7 @@ struct Cam2d {
   // todo: this is view projection matrix.
   glm::mat4 projection_maxtrix() const {
     float w = this->window_size.x, h = this->window_size.y;
-    auto projection_m = glm::ortho(0.0f, w, h, 0.0f);
+    auto projection_m = glm::ortho(0.0f, w, 0.0f, h);
 
     glm::mat4 view_m{1.0f};
     view_m =

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -8,6 +9,9 @@
 
 // general geometry
 namespace gg {
+
+// U32_MAX is max for x (lon) and y (lat) in world cooridnates.
+constexpr auto U32_MAX = std::numeric_limits<uint32_t>::max();
 
 using gpt_units_t = uint32_t;
 struct gpt_t {
@@ -134,14 +138,14 @@ inline double rad_to_deg(double x) { return x * 180.0 / M_PI; }
 
 // Mercator projection formulas.
 namespace mercator {
-// These functions are commented until they are needed and they have tests.
-// inline double y_to_lat(double y) {
-//   return rad_to_deg(atan(exp(deg_to_rad(y))) * 2 - M_PI / 2);
-// }
-// Projects rad, input and output inr radians.
-// inline double x_to_lon(double x) { // todo: rename to unproject_lon
-//   return x;
-// }
+
+inline double yr_to_lat(double yr) { return atan(exp(yr)) * 2 - M_PI / 2; }
+inline double xr_to_lon(double xr) { return xr; } // not needed?
+
+inline double unproject_lat(double y) {
+  return rad_to_deg(atan(exp(deg_to_rad(y))) * 2 - M_PI / 2);
+}
+inline double unproject_lon(double x) { return x; }
 
 inline double lat_to_y_r(double lat_r) {
   return log(tan(lat_r / 2 + M_PI / 4));
@@ -149,22 +153,43 @@ inline double lat_to_y_r(double lat_r) {
 inline double lon_to_x_r(double lon) { return lon; }
 
 inline double project_lat(double lat) {
+
   return rad_to_deg(log(tan(deg_to_rad(lat) / 2 + M_PI / 4)));
 }
 inline double project_lon(double lon) { return lon; }
 
 inline gpt_units_t lat_to_yu(double lat) {
-  // after projection range becomes -180..+180 assuming we clamped value to
-  // -85..+85.
   // todo: should we use round() or we can just truncate is fine?
   return static_cast<uint32_t>(
-      ((lat_to_y_r(deg_to_rad(lat)) + M_PI) / (2 * M_PI)) *
-      std::numeric_limits<uint32_t>::max());
+      ((lat_to_y_r(deg_to_rad(lat)) + M_PI) / (2 * M_PI)) * U32_MAX);
 }
 inline gpt_units_t lon_to_xu(double lon) {
-  return static_cast<uint32_t>(((lon + 180.0) / 360.0) *
-                               std::numeric_limits<uint32_t>::max());
+  return static_cast<uint32_t>(((lon + 180.0) / 360.0) * U32_MAX);
 }
+
+inline double yu_to_lat(gpt_units_t y) {
+  return rad_to_deg(yr_to_lat((y / (double)U32_MAX) * 2 * M_PI - M_PI));
+}
+
+inline double xu_to_lon(gpt_units_t x) {
+  return (x / (double)U32_MAX) * 360.0 - 180.0;
+}
+
+const double PROJECTED_LON_MIN = xu_to_lon(0);
+const double PROJECTED_LON_MAX = xu_to_lon(U32_MAX);
+const double PROJECTED_LAT_MIN = yu_to_lat(0);
+const double PROJECTED_LAT_MAX = yu_to_lat(U32_MAX);
+
+inline double clamp_lon_to_valid(double lon) {
+  return std::clamp(lon, gg::mercator::PROJECTED_LON_MIN,
+                    gg::mercator::PROJECTED_LON_MAX);
+}
+
+inline double clamp_lat_to_valid(double lat) {
+  return std::clamp(lat, gg::mercator::PROJECTED_LAT_MIN,
+                    gg::mercator::PROJECTED_LAT_MAX);
+}
+
 } // namespace mercator
 
 } // namespace gg
