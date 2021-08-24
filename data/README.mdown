@@ -1,0 +1,5 @@
+
+To have data accessible by the code, unpack archives in a way that unpacked zip archive has folder of the same name without .zip extension.
+E.g. if you have `ne_10m_land.zip` after unpacking there should be folder ne_10m_land.
+
+Gitignore uses '/*' rule to ignore all directories in data/ folder.
