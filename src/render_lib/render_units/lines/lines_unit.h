@@ -88,12 +88,12 @@ public:
 
     glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0,
-                    m_geometry.size() * sizeof(m_geometry[0]), &m_geometry[0]);
+                    m_geometry.size() * sizeof(m_geometry[0]), m_geometry.data());
     glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
 
     glBindBuffer(GL_ARRAY_BUFFER, this->m_colors_vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, m_colors.size() * sizeof(m_colors[0]),
-                    &m_colors[0]);
+                    m_colors.data());
     glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
   }
 

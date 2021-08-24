@@ -1,6 +1,8 @@
 #pragma once
 
+#define _USE_MATH_DEFINES
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -29,16 +31,49 @@ struct gbb_t {
   gpt_units_t height;
 };
 
+struct wgs84_t {
+  double lat;
+  double lon;
+};
+
+gpt_t wgs_to_gpt(double lat, double lon);
+wgs84_t to_wgs(const gpt_t &pt);
+
 // Tiles stuff
 // What do I know about tile id?
 // I know that at each level I have division by four.
 // four takes two bits: 00, 01, 10, 11
 // so I need two bits to select tile at each level.
 // if I want to have 16 levels then I need 32 bits to encode that.
-using tile_id_t = uint32_t;
-tile_id_t tile_id_by_pt(gpt_t pt);
-unsigned tile_level(tile_id_t tid);
-gbb_t tile_bb(tile_id_t tid);
+struct tile_id_t {
+  tile_id_t() : id(0) {}
+  tile_id_t(uint32_t id) : id(id) {}
+  tile_id_t(uint16_t x, uint16_t y) : x(x), y(y) {}
+  union {
+    uint32_t id;
+    struct {
+      uint16_t x;
+      uint16_t y;
+    };
+  };
+};
+static_assert(sizeof(tile_id_t) == sizeof(uint32_t), "32 bit");
+
+// We don't want to play with rticky level encoding
+// just store level information next to tile_id
+// With mercator projecftion we are going to use entire range of 32 bits on a
+// level 15 so we has no waste bits to store level information
+struct tile_at_level_t {
+  tile_id_t id;
+  uint32_t level; // 0 .. 15
+};
+
+tile_id_t tile_id_by_pt(gpt_t pt, uint32_t level);
+gbb_t tile_bb(tile_at_level_t tile);
+
+tile_at_level_t root_tile() { return {0, 0}; }
+tile_at_level_t parent_tile(tile_at_level_t);
+std::array<tile_id_t, 4> children_tiles(tile_at_level_t);
 
 // trying out this alias.
 using p32 = gpt_t;
