@@ -21,7 +21,6 @@ void main() {
     } else {
         // inner
         color = vec4(inColor, 1.0);
-        //color = vec4(inColor, 1.0);
         gl_Position = proj * vec4(coords.x, coords.y, 0.0, 1.0);
     }
 }

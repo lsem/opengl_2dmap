@@ -1,5 +1,7 @@
 #include "common/global.h"
+#include "render_lib/debug_ctx.h"
 #include "types.h"
+
 namespace roads_shader_aa {
 
 #define likely(x) x
@@ -19,13 +21,14 @@ template <class EventHandler> struct ExtrudePolyline : public EventHandler {
   template <typename... Args>
   ExtrudePolyline(Args... args) : EventHandler(args...) {}
 
-  void extrude_polyline(span<p32> polyline, double width) {
+  void extrude_polyline(span<p32> polyline, double width, DebugCtx &debug_ctx) {
     assert(polyline.size() > 2);
     if (polyline.size() < 3) {
       log_err("line with less than 3 points");
       return;
     }
 
+    bool was_parallel = false;
     const size_t N = polyline.size();
     v2 prev_d;
     for (size_t i = 0; i < N; ++i) {
@@ -39,8 +42,14 @@ template <class EventHandler> struct ExtrudePolyline : public EventHandler {
       v2 d;
       if (unlikely(
               !gg::lines_intersection(p1 + t1, p2 + t1, p3 + t2, p2 + t2, d))) {
-        log_warn("parallel lines at {},{},{}", i - 2, i - 1, i);
-        continue;
+        auto l1 = len(v2(p1 + t1, p2 + t1));
+        auto l2 = len(v2(p3 + t2, p2 + t2));
+        debug_ctx.add_line(p1 + t1, p2 + t1, colors::red, "parallel-lines");
+        debug_ctx.add_line(p3 + t2, p2 + t2, colors::blue, "parallel-lines");
+        log_warn(
+            "parallel lines at {},{},{} ({} / {} / {} / {}) (lengths: {}, {})",
+            i - 2, i - 1, i, p1 + t1, p2 + t1, p3 + t2, p2 + t2, l1, l2);
+        assert(false);
       }
       EventHandler::next(p2, d);
       prev_d = d;
@@ -68,6 +77,8 @@ struct PolylineAAHandler {
   }
 
   void next(v2 p, v2 d) {
+    assert((out_vertices.size() - vi) > 2);
+    assert((out_indices.size() - ii) > 6);
     // -----------------------------------
     //
     //  prev_d            d
@@ -105,12 +116,11 @@ struct PolylineAAHandler {
   }
 };
 
-static std::tuple<size_t, size_t> make_geometry(span<p32> polyline,
-                                                double width,
-                                                span<AAVertex> out_vertices,
-                                                span<uint32_t> out_indices) {
+static std::tuple<size_t, size_t>
+make_geometry(span<p32> polyline, double width, span<AAVertex> out_vertices,
+              span<uint32_t> out_indices, DebugCtx &debug_ctx) {
   ExtrudePolyline<PolylineAAHandler> extrude(out_vertices, out_indices);
-  extrude.extrude_polyline(polyline, width);
+  extrude.extrude_polyline(polyline, width, debug_ctx);
   return {extrude.vi, extrude.ii};
 }
 

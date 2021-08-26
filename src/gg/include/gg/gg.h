@@ -17,10 +17,17 @@ constexpr auto U32_MAX = std::numeric_limits<uint32_t>::max();
 
 using gpt_units_t = uint32_t;
 struct gpt_t {
+  gpt_t(gpt_units_t x, gpt_units_t y) : x(x), y(y) {}
+  gpt_t() {}
   gpt_units_t x, y;
 };
-gpt_units_t lat_to_y(double lat);
-gpt_units_t lon_to_x(double lon);
+
+inline bool operator==(const gpt_t &lhs, const gpt_t &rhs) {
+  return std::tie(lhs.x, lhs.y) == std::tie(rhs.x, rhs.y);
+}
+
+gpt_units_t lat_to_y(double mercator_lat);
+gpt_units_t lon_to_x(double mercator_lon);
 double y_to_lat(gpt_units_t y);
 double x_to_lon(gpt_units_t x);
 
@@ -188,11 +195,11 @@ inline double lat_to_y_r(double lat_r) {
 inline double lon_to_x_r(double lon) { return lon; }
 
 inline double project_lat(double lat) {
-
   return rad_to_deg(log(tan(deg_to_rad(lat) / 2 + M_PI / 4)));
 }
 inline double project_lon(double lon) { return lon; }
 
+// Projects lat to units.
 inline gpt_units_t lat_to_yu(double lat) {
   // todo: should we use round() or we can just truncate is fine?
   return static_cast<uint32_t>(
@@ -226,5 +233,9 @@ inline double clamp_lat_to_valid(double lat) {
 }
 
 } // namespace mercator
+
+namespace utils {
+std::vector<p32> eliminate_parallel_segments(std::vector<p32> points);
+}
 
 } // namespace gg

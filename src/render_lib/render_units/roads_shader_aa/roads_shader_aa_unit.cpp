@@ -23,7 +23,11 @@ bool RoadsShaderAAUnit::make_buffers() {
 
   glBindVertexArray(m_vao);
   glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-  glBufferData(GL_ARRAY_BUFFER, 100'000, NULL, GL_DYNAMIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("aa vertices alloc error: {}", glGetError());
+  }
+
   static_assert(sizeof(p32) == sizeof(uint32_t) * 2); // todo: fix me.
   glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(AAVertex),
                         (void *)offsetof(AAVertex, coords));
@@ -32,7 +36,7 @@ bool RoadsShaderAAUnit::make_buffers() {
   // glVertexAttribIPointer(2, 3, GL_UNSIGNED_BYTE, sizeof(AAVertex),
   //                        (void *)offsetof(AAVertex, color));
   glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
-                         (void *)offsetof(AAVertex, color));
+                        (void *)offsetof(AAVertex, color));
 
   glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
                         (void *)offsetof(AAVertex, extent_vec));
@@ -45,30 +49,13 @@ bool RoadsShaderAAUnit::make_buffers() {
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, 100'000, NULL, GL_DYNAMIC_DRAW);
-  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("aa indices alloc error: {}", glGetError());
+  }
+  // DO NOT UNBIND EBO!
 
   glBindVertexArray(0); // unbind vao.
-
-  // glGenVertexArrays(1, &m_aa_vao);
-  // glGenBuffers(1, &m_aa_vbo);
-  // glBindVertexArray(m_aa_vao);
-  // glBindBuffer(GL_ARRAY_BUFFER, m_aa_vbo);
-  // const size_t aa_one_triangle_size =
-  //     6 * (2 * sizeof(uint32_t) +
-  //          4 * sizeof(float)); // one vertex is 2 coords + 4 color
-  //          components, 6
-  //                              // vertices in total.
-  // glBufferData(GL_ARRAY_BUFFER, aa_one_triangle_size * 100'000'00, nullptr,
-  //              GL_DYNAMIC_DRAW);
-  // glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE,
-  // sizeof(ColoredVertex),
-  //                       (void *)offsetof(ColoredVertex, vertex));
-  // glEnableVertexAttribArray(0);
-  // glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(ColoredVertex),
-  //                       (void *)offsetof(ColoredVertex, color));
-  // glEnableVertexAttribArray(1);
-  // glBindVertexArray(0); // unbind aa vao
 
   m_vertices_uploaded = 0;
   m_indices_uploaded = 0;
@@ -85,15 +72,27 @@ void RoadsShaderAAUnit::set_data(span<AAVertex> aa_vertices,
   glBufferSubData(GL_ARRAY_BUFFER, 0,
                   aa_vertices.size() * sizeof(aa_vertices[0]),
                   aa_vertices.data());
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("aa vertices set_data error: {} (points count: {})", glGetError(),
+            aa_vertices.size());
+  }
+
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
   glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
                   aa_indices.size() * sizeof(aa_indices[0]), aa_indices.data());
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("aa indices set_data error: {}", glGetError());
+  }
+
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
   m_vertices_uploaded = aa_vertices.size();
   m_indices_uploaded = aa_indices.size();
+
+  log_debug("aa: ertices_uploaded: {}", m_vertices_uploaded);
+  log_debug("aa: indices_uploaded: {}", m_indices_uploaded);
 }
 
 /*virtual*/
@@ -111,8 +110,17 @@ void RoadsShaderAAUnit::render_frame(const camera::Cam2d &cam) /*override*/ {
 
   glUniform1uiv(glGetUniformLocation(m_shader->id, "data"), 100, &data[0]);
 
+  // log_debug("drawing: {}", m_indices_uploaded);
+
   glBindVertexArray(m_vao);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("glBindVertexArray error: {}", glGetError());
+  }
+
   glDrawElements(GL_TRIANGLES, m_indices_uploaded, GL_UNSIGNED_INT, 0);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("drawElements error: {}", glGetError());
+  }
   glBindVertexArray(0);
   m_shader->detach();
 }

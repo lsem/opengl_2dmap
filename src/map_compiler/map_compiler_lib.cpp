@@ -1,34 +1,24 @@
 
+#include <algorithm>
 #include <common/global.h>
 #include <common/log.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <gg/gg.h>
 #include <list>
 #include <shapefil.h> // shapelib
 
+#include "map_compiler_lib.h"
+
 namespace fs = std::filesystem;
-
-// todo: use snappy or similar when it comes to packing.
-
 namespace map_compiler {
 
-// hierarch is the follwing:
-//    one file has multiple shapes
-//    each shape has multiple parts
-//    each part has multiple vertices.
-
-// see shpdump.c
-using vertice_t = std::tuple<double, double>;
-using part_points_t = std::vector<vertice_t>;
-using shape_parts_t = std::vector<part_points_t>;
-using shapes_t = std::vector<shape_parts_t>;
-
-
-shapes_t load_shapes(const fs::path& shape_file_path) {
+shapes_t load_shapes(const fs::path &shape_file_path) {
   if (!fs::exists(shape_file_path)) {
-    throw std::runtime_error(fmt::format("Path {} does not exist", shape_file_path));
+    throw std::runtime_error(
+        fmt::format("Path {} does not exist", shape_file_path));
   }
 
   SHPHandle lands_shp = SHPOpen(shape_file_path.c_str(), "rb");
@@ -76,44 +66,30 @@ shapes_t load_shapes(const fs::path& shape_file_path) {
                                          ? shape->nVertices
                                          : shape->panPartStart[part_i + 1];
 
-      //   log_debug("part: {}..{}", part_start_offset,
-      //             part_start_offset + part_size);
-
-    assert(shape->padfX[part_start_offset] == shape->padfX[part_end_offset - 1]);
+      assert(shape->padfX[part_start_offset] ==
+             shape->padfX[part_end_offset - 1]);
 
       part_points_t part_points;
       // read part
       // also detect orientation of RING. Not sure if this correct to calculate
       // in sperical space using method from Euclidian space.
-      double signed_area2 = 0.0;
-      double x1 = NAN, y1 = NAN;
       for (size_t vi = part_start_offset; vi != part_end_offset; ++vi) {
         auto x = shape->padfX[vi];
         auto y = shape->padfY[vi];
-
-        auto py = gg::mercator::project_lat(y);
-        auto px = gg::mercator::project_lon(x);
-
-        // log_debug("point: {},{}", x, y);
-        part_points.emplace_back(x, y);
-        double x2 = px;
-        double y2 = py;
-        if (!std::isnan(x1)) {
-          assert(!std::isnan(y1));
-          signed_area2 += (x1 * y2 - x2 * y1);
-        }
-        x1 = x2;
-        y1 = y2;
+        x = gg::mercator::project_lon(gg::mercator::clamp_lon_to_valid(x));
+        y = gg::mercator::project_lat(gg::mercator::clamp_lat_to_valid(y));
+        gg::gpt_units_t ux = gg::lon_to_x(x);
+        gg::gpt_units_t uy = gg::lat_to_y(y);
+        part_points.emplace_back(ux, uy);
       }
-      if (signed_area2 < 0) {
-        // clockwise
-        // log_debug("Clockwise");
+      part_points =
+          gg::utils::eliminate_parallel_segments(std::move(part_points));
+      if (part_points.size() < 3) {
+        log_warn("part {} of shape {} is too simple, remove from output", i,
+                 part_i);
       } else {
-        // counterclockwise
-        log_warn("Counterclockwise: {}", part_i);
-        continue;
+        shape_parts.emplace_back(std::move(part_points));
       }
-      shape_parts.emplace_back(std::move(part_points));
     }
 
     shapes.emplace_back(std::move(shape_parts));
@@ -134,14 +110,3 @@ shapes_t load_shapes(const fs::path& shape_file_path) {
 }
 
 } // namespace map_compiler
-
-// int main() {
-//   try {
-//     log_debug("compiling lands..");
-//     compile_lands();
-//     log_debug("compiling lands.. DONE");
-
-//   } catch (const std::exception &e) {
-//     log_err("error: {}", e.what());
-//   }
-// }

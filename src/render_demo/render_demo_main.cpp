@@ -37,6 +37,7 @@
 #include "render_units/roads_shader_aa/roads_shader_aa_unit.h"
 #include "render_units/triangle/render_triangle.h"
 
+#include "render_lib/debug_ctx.h"
 #include "render_lib/shader_program.h"
 
 #include <imgui/imgui.h>
@@ -56,8 +57,11 @@ bool g_wireframe_mode = false;
 bool g_prev_wireframe_mode = false;
 bool g_show_crosshair = false;
 
-uint32_t MASTER_ORIGIN_X = gg::U32_MAX / 2;
-uint32_t MASTER_ORIGIN_Y = gg::U32_MAX / 2;
+// uint32_t MASTER_ORIGIN_X = gg::U32_MAX / 2;
+// uint32_t MASTER_ORIGIN_Y = gg::U32_MAX / 2;
+
+uint32_t MASTER_ORIGIN_X = gg::lon_to_x(23.0);
+uint32_t MASTER_ORIGIN_Y = gg::lat_to_y(49.0);
 
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
@@ -112,66 +116,95 @@ void print_coords_debug_info(const Cam2d &cam, double cx, double cy) {
   log_debug("Click: {},{} (x: {}, y:{})", lat, lon, x, y);
 }
 
-std::optional<std::tuple<vector<p32>, vector<uint32_t>>>
-generate_lands_quads(DebugCtx &dctx) {
+// Returns {vertices, indices, aa_vertices, aa_indices} for lands.
+std::optional<std::tuple<vector<p32>, vector<uint32_t>,
+                         vector<roads_shader_aa::AAVertex>, vector<uint32_t>>>
+generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
   vector<p32> vertices;
   vector<uint32_t> indices;
+  vector<roads_shader_aa::AAVertex> aa_vertices(30'000'000);
+  vector<uint32_t> aa_indices(30'000'000);
+  size_t current_aa_vertices_offset = 0;
+  size_t current_aa_indiices_offset = 0;
+
+  std::chrono::steady_clock::duration total_earcut_time;
+  std::chrono::steady_clock::duration total_aa_time;
+
   try {
-    if (!std::getenv("DATA_ROOT")) {
-      throw std::runtime_error("No DATA_ROOT specified");
-    }
-    const auto data_root_str = std::string(std::getenv("DATA_ROOT"));
     auto lands_path = fs::path(data_root_str) / "natural_earth" /
                       "ne_10m_land" / "ne_10m_land.shp";
-    auto lands_shapes = map_compiler::load_shapes(lands_path);
-    unsigned total_parts = 0;
-    for (auto &shape : lands_shapes) {
+
+    for (auto &shape : map_compiler::load_shapes(lands_path)) {
       for (auto &part : shape) {
         // Convert part vertices into mapbox::earcut format which
         // expects polygin defined as vector of vectors which means
         // main polygon and holes.
+        auto start_time = std::chrono::steady_clock::now();
         vector<vector<array<double, 2>>> earcut_polygon;
         earcut_polygon.push_back({});
-        for (auto &[x, y] : part) {
-          earcut_polygon.back().push_back({x, y});
-        }
-        assert(earcut_polygon.size() == 1);
-        auto earcut_indices = mapbox::earcut(earcut_polygon);
-        // One more pass over part to create dual vector with points in our
-        // renderer format with idea to use just indices produced by earcut.
-        auto pen = dctx.make_pen();
         bool first = true;
-        const size_t k = vertices.size();
-        for (auto &[lon, lat] : part) {
-          lon = gg::mercator::clamp_lon_to_valid(lon);
-          lat = gg::mercator::clamp_lat_to_valid(lat);
-          auto px = gg::mercator::lon_to_xu(lon);
-          auto py = gg::mercator::lat_to_yu(lat);
-          vertices.push_back(p32{px, py});
-          if (first) {
-            first = false;
-            pen.move_to(p32{px, py});
-          } else {
-            const vector<Color> colors = {colors::red, colors::green,
-                                          colors::blue, colors::magenta,
-                                          colors::grey};
-            pen.line_to(p32{px, py}, colors[total_parts % colors.size()]);
-          }
+        const size_t M = vertices.size();
+        for (gg::gpt_t &pt : part) {
+          earcut_polygon.back().push_back(
+              {static_cast<double>(pt.x), static_cast<double>(pt.y)});
+          vertices.emplace_back(pt);
         }
-        for (auto idx : earcut_indices) {
-          indices.push_back(idx + k);
+        for (auto idx : mapbox::earcut(earcut_polygon)) {
+          indices.push_back(idx + M);
         }
-        assert(indices.size() % 3 == 0);
-      }
-    }
+        total_earcut_time += std::chrono::steady_clock::now() - start_time;
 
-    log_debug("vertices.size: {}", vertices.size());
+        auto aa_start_time = std::chrono::steady_clock::now();
+        assert(indices.size() % 3 == 0);
+        // vertices[M:] now contains data which can be used for aa.
+        auto [aa_vertices_generated, aa_indices_generated] =
+            roads_shader_aa::make_geometry(
+                span(std::begin(vertices) + M, std::end(vertices)), 2.0,
+                span(std::begin(aa_vertices) + current_aa_vertices_offset,
+                     std::end(aa_vertices)),
+                span(std::begin(aa_indices) + current_aa_indiices_offset,
+                     std::end(aa_indices)),
+                dctx);
+        current_aa_vertices_offset += aa_vertices_generated;
+        current_aa_indiices_offset += aa_indices_generated;
+
+        total_aa_time += std::chrono::steady_clock::now() - aa_start_time;
+
+      } // parts
+
+    } // shapes
+
   } catch (const std::exception &e) {
     log_err("failed compiling lands: {}", e.what());
     return std::nullopt;
   }
+  log_debug(
+      "Triangulation time: {}ms",
+      std::chrono::duration_cast<std::chrono::milliseconds>(total_earcut_time)
+          .count());
+  log_debug("AA: {}ms",
+            std::chrono::duration_cast<std::chrono::milliseconds>(total_aa_time)
+                .count());
 
-  return std::tuple{std::move(vertices), std::move(indices)};
+  if (current_aa_vertices_offset == aa_vertices.size()) {
+    log_warn("lands: aa vertices truncated");
+  }
+  if (current_aa_indiices_offset == aa_indices.size()) {
+    log_warn("lands: aa indices truncated");
+  }
+  aa_vertices.resize(current_aa_vertices_offset / 2);
+  aa_indices.resize(current_aa_indiices_offset / 2);
+  //   aa_vertices.resize(current_aa_vertices_offset);
+  // aa_indices.resize(current_aa_indiices_offset);
+
+  for (auto &v : aa_vertices) {
+    v.color[0] = 0.53;
+    v.color[1] = 0.54;
+    v.color[2] = 0.55;
+  }
+
+  return std::tuple{std::move(vertices), std::move(indices),
+                    std::move(aa_vertices), std::move(aa_indices)};
 }
 
 std::tuple<vector<roads_shader_aa::AAVertex>, vector<uint32_t>, vector<p32>,
@@ -200,8 +233,8 @@ generate_test_scene2(v2 scene_origin, float zoom) {
   vector<roads_shader_aa::AAVertex> all_vertices(1000'000);
   vector<uint32_t> all_indices(1000'000);
 
-  auto [verices_num, indices_num] =
-      roads_shader_aa::make_geometry(outline, 1.5, all_vertices, all_indices);
+  auto [verices_num, indices_num] = roads_shader_aa::make_geometry(
+      outline, 1.5, all_vertices, all_indices, ctx);
   all_vertices.resize(verices_num);
   all_indices.resize(indices_num);
   for (auto &v : all_vertices) {
@@ -562,11 +595,28 @@ int main() {
 
   roads.set_data(road_vertices, {});
 
+  //
+  // Lands
+  //
   DebugCtx lands_dctx;
   lands::Lands lands;
-  auto maybe_lands = generate_lands_quads(lands_dctx);
+  // todo: refactor to call it polyline_aa.
+  roads_shader_aa::RoadsShaderAAUnit lands_aa;
+  if (!lands_aa.load_shaders(SHADERS_ROOT)) {
+    log_err("failed loading shaders for lands_aa");
+    return -1;
+  }
+  if (!lands_aa.make_buffers()) {
+    log_err("failed creating buffers lands_aa");
+    return -1;
+  }
+  if (!std::getenv("DATA_ROOT")) {
+    throw std::runtime_error("No DATA_ROOT specified");
+  }
+  const auto data_root = std::string(std::getenv("DATA_ROOT"));
+  auto maybe_lands = generate_lands_quads(data_root, lands_dctx);
   if (maybe_lands) {
-    auto [lands_points, lands_indices] = *maybe_lands;
+    auto [lands_points, lands_indices, aa_vertices, aa_indices] = *maybe_lands;
     if (!lands.load_shaders(SHADERS_ROOT)) {
       log_err("failed loading lands shaders");
       return -1;
@@ -575,13 +625,16 @@ int main() {
       log_err("failed making lands buffers");
       return -1;
     }
-    log_debug("lands_points: {}", lands_points.size());
-    log_debug("lands_indices: {}", lands_indices.size());
+    log_debug("lands points: {}", lands_points.size());
+    log_debug("lands indices: {}", lands_indices.size());
+    log_debug("lands aa points: {}", aa_vertices.size());
+    log_debug("lands aa indidices: {}", aa_indices.size());
     lands.set_data(lands_points, lands_indices);
+    lands_aa.set_data(aa_vertices, aa_indices);
   } else {
     log_warn("Lands will not be displayed");
   }
-
+  log_debug("There are {} debug lines for LANDS", lands_dctx.lines.size());
   // Debug context lines.
   vector<tuple<v2, v2, Color>> lines_v2;
   for (auto [a, b, c] : lands_dctx.lines) {
@@ -617,9 +670,16 @@ int main() {
   bool draw_debug_lines = true;
   bool show_world_bb = true;
   bool show_lands = true;
+  bool show_lands_aa = true;
+  bool camera_demo = false;
   static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
 
   while (!glfwWindowShouldClose(window)) {
+
+    if (camera_demo) {
+      cam.zoom = cam.zoom * pow(2, std::cos(glfwGetTime()) / 2.0 * 0.01);
+    }
+
     glfwPollEvents();
     glClearColor(clear_color[0], clear_color[1], clear_color[2],
                  clear_color[3]);
@@ -651,6 +711,10 @@ int main() {
     if (show_lands) {
       lands.render_frame(cam);
     }
+    if (show_lands_aa) {
+      lands_aa.render_frame(cam);
+    }
+
     if (show_world_bb) {
       world_frame_lines.render_frame(cam);
     }
@@ -662,6 +726,9 @@ int main() {
     ImGui::Checkbox("Draw debug lines", &draw_debug_lines);
     ImGui::Checkbox("Show world BB", &show_world_bb);
     ImGui::Checkbox("Show Lands", &show_lands);
+    ImGui::Checkbox("Show Lands AA", &show_lands_aa);
+    ImGui::Checkbox("Camera Demo", &camera_demo);
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

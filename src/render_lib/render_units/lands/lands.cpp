@@ -23,9 +23,17 @@ void Lands::set_data(span<p32> vertices, span<uint32_t> indices) {
                   vertices.data());
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("lands vertices set_data error: {}", glGetError());
+  }
+
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
   glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
                   indices.size() * sizeof(indices[0]), indices.data());
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("lands indices set_data error: {}", glGetError());
+  }
+
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
   m_vertices_uploaded = vertices.size();
@@ -40,6 +48,9 @@ bool Lands::make_buffers() {
   glBindVertexArray(m_vao);
   glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
   glBufferData(GL_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("lands vertices alloc error: {}", glGetError());
+  }
 
   glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(p32),
                         (void *)0);
@@ -49,6 +60,10 @@ bool Lands::make_buffers() {
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
+  if (glGetError() != GL_NO_ERROR) {
+    log_err("lands indices alloc error: {}", glGetError());
+  }
+  // DO NOT UNBIND EBO!
 
   glBindVertexArray(0); // unbind vao.
 
