@@ -8,10 +8,6 @@
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
 
-#include <fmt/color.h>
-#include <fmt/format.h>
-#include <fmt/ostream.h>
-
 #include "common/os.h"
 
 #include <algorithm>
@@ -48,6 +44,8 @@
 
 #include <map_compiler_lib.h>
 
+#include "test_data.h"
+
 using camera::Cam2d;
 using camera_control::CameraControl;
 
@@ -63,8 +61,51 @@ bool g_show_crosshair = false;
 uint32_t MASTER_ORIGIN_X = gg::lon_to_x(23.0);
 uint32_t MASTER_ORIGIN_Y = gg::lat_to_y(49.0);
 
+const v2 RANDOM_ROADS_SCENE_POSITION(MASTER_ORIGIN_X, MASTER_ORIGIN_Y);
+
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
+
+struct Amimation {
+  Amimation(v2 source_value, v2 target_value, double start_time,
+            double finish_time, std::function<void(v2)> progress_cb,
+            std::function<void()> finish_cb)
+      : source_value(source_value), target_value(target_value),
+        start_time(start_time), finish_time(finish_time), finish_cb(finish_cb),
+        progress_cb(progress_cb), enabled(true) {}
+  v2 source_value;
+  v2 target_value;
+  double start_time;
+  double finish_time;
+  std::function<void(v2)> progress_cb;
+  std::function<void()> finish_cb;
+  bool enabled;
+};
+
+struct AnimationsEngine {
+  vector<std::unique_ptr<Amimation>> animations;
+
+  void add(std::unique_ptr<Amimation> animation) {
+    this->animations.emplace_back(std::move(animation));
+  }
+
+  void process_frame(double current_time) {
+    for (auto &anim : animations) {
+      if (!anim->enabled) {
+        continue;
+      }
+      const double t = (current_time - anim->start_time) /
+                       (anim->finish_time - anim->start_time);
+      if (t >= 1.0) {
+        anim->enabled = false;
+        anim->finish_cb();
+      } else {
+        anim->progress_cb(anim->source_value +
+                          (anim->target_value - anim->source_value) * t);
+      }
+    }
+  }
+};
 
 void update_fps_counter(GLFWwindow *window) {
   static double previous_seconds = glfwGetTime();
@@ -122,20 +163,23 @@ std::optional<std::tuple<vector<p32>, vector<uint32_t>,
 generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
   vector<p32> vertices;
   vector<uint32_t> indices;
-  vector<roads_shader_aa::AAVertex> aa_vertices(30'000'000);
-  vector<uint32_t> aa_indices(30'000'000);
+  vector<roads_shader_aa::AAVertex> aa_vertices(50'000'000);
+  vector<uint32_t> aa_indices(50'000'000);
   size_t current_aa_vertices_offset = 0;
   size_t current_aa_indiices_offset = 0;
 
-  std::chrono::steady_clock::duration total_earcut_time;
-  std::chrono::steady_clock::duration total_aa_time;
+  std::chrono::steady_clock::duration total_earcut_time{0};
+  std::chrono::steady_clock::duration total_aa_time{0};
 
   try {
     auto lands_path = fs::path(data_root_str) / "natural_earth" /
                       "ne_10m_land" / "ne_10m_land.shp";
 
     for (auto &shape : map_compiler::load_shapes(lands_path)) {
+      int parn_n = 0;
       for (auto &part : shape) {
+        assert(part.front() == part.back());
+
         // Convert part vertices into mapbox::earcut format which
         // expects polygin defined as vector of vectors which means
         // main polygon and holes.
@@ -156,46 +200,129 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
 
         auto aa_start_time = std::chrono::steady_clock::now();
         assert(indices.size() % 3 == 0);
-        // vertices[M:] now contains data which can be used for aa.
+
+        { // debug
+          auto pen = dctx.make_pen();
+          auto it = std::begin(vertices) + M;
+          pen.move_to(*it++);
+          int k = 0;
+          for (; it != std::end(vertices); ++it) {
+            vector<Color> colors({colors::red, colors::green, colors::blue});
+            auto c = colors[parn_n];
+            c.r *= k / (double)M;
+            c.g *= k / (double)M;
+            c.b *= k / (double)M;
+            pen.line_to(*it, c);
+            k++;
+          }
+        }
         auto [aa_vertices_generated, aa_indices_generated] =
             roads_shader_aa::make_geometry(
-                span(std::begin(vertices) + M, std::end(vertices)), 2.0,
-                span(std::begin(aa_vertices) + current_aa_vertices_offset,
-                     std::end(aa_vertices)),
-                span(std::begin(aa_indices) + current_aa_indiices_offset,
-                     std::end(aa_indices)),
-                dctx);
+                span(std::begin(vertices) + M, std::end(vertices)), 1.0,
+                aa_vertices, current_aa_vertices_offset, aa_indices,
+                current_aa_indiices_offset, dctx);
+
+        { // debug
+          for (size_t i = current_aa_indiices_offset + 2;
+               i < current_aa_indiices_offset + aa_indices_generated; ++i) {
+            auto a = aa_vertices[aa_indices[i - 2]].coords;
+            auto b = aa_vertices[aa_indices[i - 1]].coords;
+            auto c = aa_vertices[aa_indices[i]].coords;
+
+            vector<Color> colors({colors::red, colors::green, colors::blue});
+            // dctx.add_line(a, b, colors[parn_n % colors.size()]);
+            // dctx.add_line(b, c, colors[parn_n % colors.size()]);
+            // dctx.add_line(c, a, colors[parn_n % colors.size()]);
+
+            auto a_u =
+                std::make_tuple(gg::mercator::unproject_lon(gg::x_to_lon(a.x)),
+                                gg::mercator::unproject_lat(gg::y_to_lat(a.y)));
+
+            auto b_u =
+                std::make_tuple(gg::mercator::unproject_lon(gg::x_to_lon(b.x)),
+                                gg::mercator::unproject_lat(gg::y_to_lat(b.y)));
+
+            auto c_u =
+                std::make_tuple(gg::mercator::unproject_lon(gg::x_to_lon(c.x)),
+                                gg::mercator::unproject_lat(gg::y_to_lat(c.y)));
+
+            if ((len(gg::v2(a, b)) > gg::U32_MAX / 8) ||
+                (len(gg::v2(b, c)) > gg::U32_MAX / 8) ||
+                (len(gg::v2(c, a)) > gg::U32_MAX / 8)) {
+              log_err("Found fault side: {}: {}/{}/{} ({}; {}; {})", parn_n,
+                      aa_indices[i - 2], aa_indices[i - 1], aa_indices[i - 0],
+                      a_u, b_u, c_u);
+
+              // log_err("Found fault side: {} ({:>30} ; {:>30}; {:>30})", i -
+              // 2,
+              //         a_u, b_u, c_u);
+              // assert(false);
+            }
+
+            // if (i - 2 == 489930) {
+            //   log_err("Found fault side: {} ({}; {}; {})", i - 2, a_u, b_u,
+            //           c_u);
+            //   log_debug("i-2: {}", aa_indices[i - 2]);
+            //   log_debug("i-1: {}", aa_indices[i]);
+            //   log_debug("i: {}", aa_indices[i]);
+            // }
+          }
+        } // debug scope
+
         current_aa_vertices_offset += aa_vertices_generated;
         current_aa_indiices_offset += aa_indices_generated;
 
         total_aa_time += std::chrono::steady_clock::now() - aa_start_time;
 
+        // if (parn_n == 5) {
+        // log_warn("part 4!:");
+        for (int i = 0; i < part.size(); i++) {
+          auto x = part[i].x;
+          auto y = part[i].y;
+          double lon = gg::mercator::unproject_lon(gg::x_to_lon(x));
+          double lat = gg::mercator::unproject_lat(gg::y_to_lat(y));
+          if (std::abs(lat - (-36.86)) < 0.1 &&
+              std::abs((lon - -56.66)) < 0.1) {
+            log_warn("found!: {} ({}) ({},{})", i, part[i], lat, lon);
+            // assert(false);
+          }
+        }
+        //}
+        parn_n++;
+
       } // parts
 
     } // shapes
-
   } catch (const std::exception &e) {
     log_err("failed compiling lands: {}", e.what());
     return std::nullopt;
   }
   log_debug(
-      "Triangulation time: {}ms",
+      "Lands Triangulation time: {}ms",
       std::chrono::duration_cast<std::chrono::milliseconds>(total_earcut_time)
           .count());
-  log_debug("AA: {}ms",
+  log_debug("Lands AA time: {}ms",
             std::chrono::duration_cast<std::chrono::milliseconds>(total_aa_time)
                 .count());
 
   if (current_aa_vertices_offset == aa_vertices.size()) {
-    log_warn("lands: aa vertices truncated");
+    log_warn("Lends: aa vertices truncated");
   }
   if (current_aa_indiices_offset == aa_indices.size()) {
-    log_warn("lands: aa indices truncated");
+    log_warn("Lands: aa indices truncated");
   }
-  aa_vertices.resize(current_aa_vertices_offset / 2);
-  aa_indices.resize(current_aa_indiices_offset / 2);
-  //   aa_vertices.resize(current_aa_vertices_offset);
-  // aa_indices.resize(current_aa_indiices_offset);
+  aa_vertices.resize(current_aa_vertices_offset);
+  aa_indices.resize(current_aa_indiices_offset);
+
+  log_debug("bugs here");
+  for (size_t i = 489920; i < 489935; i += 1) {
+    log_debug("{}", aa_vertices[i].coords);
+  }
+
+  log_debug("corresponding original outline expected to behere");
+  for (size_t i = 489920 / 2; i < 489935 / 2; i += 2) {
+    log_debug("{}", vertices[i]);
+  }
 
   for (auto &v : aa_vertices) {
     v.color[0] = 0.53;
@@ -205,6 +332,50 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
 
   return std::tuple{std::move(vertices), std::move(indices),
                     std::move(aa_vertices), std::move(aa_indices)};
+}
+
+// Trying to reproduce a bug found during AA'ing lands.
+std::tuple<vector<roads_shader_aa::AAVertex>, vector<uint32_t>>
+generate_bug_scene() {
+  vector<p32> points({p32(1596476416, 2683028992), p32(1699909504, 2703048448),
+                      p32(1777391488, 2666346240), p32(1789254784, 2586639872),
+                      p32(1867107584, 2551791616),
+                      p32(1877488000, 2506192128)});
+
+  vector<p32> shifted_points = points;
+  std::for_each(shifted_points.begin(), shifted_points.end(), [](auto &p) {
+    p.x += gg::U32_MAX / 24;
+    p.y += gg::U32_MAX / 24;
+  });
+
+  vector<roads_shader_aa::AAVertex> vertices(1'000'000);
+  vector<uint32_t> indices(1'000'000);
+
+  DebugCtx ctx;
+  size_t vertices_offset = 0;
+  size_t indicies_offset = 0;
+  auto [verices_num1, indices_num1] = roads_shader_aa::make_geometry(
+      points, 15, vertices, vertices_offset, indices, indicies_offset, ctx);
+  vertices_offset += verices_num1;
+  indicies_offset += indices_num1;
+
+  auto [verices_num2, indices_num2] = roads_shader_aa::make_geometry(
+      shifted_points, 15, vertices, vertices_offset, indices, indicies_offset,
+      ctx);
+
+  vertices_offset += verices_num2;
+  indicies_offset += indices_num2;
+
+  vertices.resize(vertices_offset);
+  indices.resize(indicies_offset);
+
+  for (auto &v : vertices) {
+    v.color[0] = 0.83;
+    v.color[1] = 0.54;
+    v.color[2] = 0.55;
+  }
+
+  return tuple{std::move(vertices), std::move(indices)};
 }
 
 std::tuple<vector<roads_shader_aa::AAVertex>, vector<uint32_t>, vector<p32>,
@@ -234,7 +405,7 @@ generate_test_scene2(v2 scene_origin, float zoom) {
   vector<uint32_t> all_indices(1000'000);
 
   auto [verices_num, indices_num] = roads_shader_aa::make_geometry(
-      outline, 1.5, all_vertices, all_indices, ctx);
+      outline, 1.5, all_vertices, 0, all_indices, 0, ctx);
   all_vertices.resize(verices_num);
   all_indices.resize(indices_num);
   for (auto &v : all_vertices) {
@@ -300,11 +471,11 @@ generate_test_scene(v2 scene_origin) {
   // this information will be used by shader for calculating.
   // Given outline I want to generate
 
-  // I already have outline, what I need is to produce two indices for the same
-  // points of outline and specify vector for that point. then, so I will have
-  // two vertices with same information, how am I supposed to figure out which
-  // one is internal and which one is external? one approach is to use vertex
-  // id. but what if that does not scale? are there any other ways?
+  // I already have outline, what I need is to produce two indices for the
+  // same points of outline and specify vector for that point. then, so I will
+  // have two vertices with same information, how am I supposed to figure out
+  // which one is internal and which one is external? one approach is to use
+  // vertex id. but what if that does not scale? are there any other ways?
 
   // for each point of outline, we produce two vertices v1, v2.
   // then we make two triangles with previous vetices v1', v2':
@@ -333,8 +504,8 @@ generate_test_scene(v2 scene_origin) {
   return std::tuple{all_roads_triangles, aa_data, ctx};
 }
 
-std::tuple<vector<p32>, vector<ColoredVertex>, DebugCtx>
-generate_random_roads(v2 scene_origin, float cam_zoom) {
+std::tuple<vector<p32>, DebugCtx> generate_random_roads(v2 scene_origin,
+                                                        float cam_zoom) {
   DebugCtx dctx;
 
   //
@@ -410,18 +581,6 @@ generate_random_roads(v2 scene_origin, float cam_zoom) {
                                                random_road_triangles_span,
                                                outline_output, 2000.0, dctx);
 
-    const size_t one_road_aa_triangles_vertex_count =
-        (outline_output.size() - 1) * 12;
-    span<p32> random_road_aa_triangles_span(all_roads_aa_triangles.data() +
-                                                current_aa_offset,
-                                            one_road_aa_triangles_vertex_count);
-    current_aa_offset += one_road_aa_triangles_vertex_count;
-
-    vector<p32> no_outline_for_aa_pass; // just fake placeholder.
-    roads::tesselation::generate_geometry<roads::tesselation::AAPassSettings>(
-        outline_output, random_road_aa_triangles_span, no_outline_for_aa_pass,
-        5.0 / cam_zoom, dctx); // in world coordiantes try smth like 200.0
-
     tesselation_time +=
         (std::chrono::steady_clock::now() - tesselation_start_time);
   }
@@ -431,29 +590,8 @@ generate_random_roads(v2 scene_origin, float cam_zoom) {
           .count();
   log_debug("Tesselation time: {}ms", tesselation_time_ms);
 
-  // For now, vertices that produced by tesselation function have different
-  // format from what roads renderer expects, so we need to to this
-  // artificial mapping.
-  // this transformations is artificial and temporary, we can get rid of that by
-  // abstracing out output container from  algorithm so that it can accept not
-  // only span<p32> but span<ColoredVertex>.
-  vector<ColoredVertex> aa_data(current_aa_offset);
-  const auto COLOR = Color{0.53, 0.54, 0.55, 1.0};
-  const auto NOCOLOR = Color{1.0f, 1.0f, 1.0f, 1.0f}; // color of glClearCOLOR
-  const vector<Color> AA_VERTEX_COLORS_PATTERN = {COLOR,   NOCOLOR, NOCOLOR,
-                                                  NOCOLOR, COLOR,   COLOR};
-  std::transform(
-      std::begin(all_roads_aa_triangles),
-      std::begin(all_roads_aa_triangles) + current_aa_offset,
-      std::begin(aa_data), [i = 0, &AA_VERTEX_COLORS_PATTERN](p32 x) mutable {
-        return ColoredVertex(
-            x, AA_VERTEX_COLORS_PATTERN[i++ % AA_VERTEX_COLORS_PATTERN.size()]);
-      });
-
   all_roads_triangles.resize(current_offset);
-  all_roads_aa_triangles.resize(current_aa_offset);
-
-  return std::tuple{all_roads_triangles, aa_data, dctx};
+  return std::tuple{all_roads_triangles, dctx};
 }
 
 int main() {
@@ -511,7 +649,7 @@ int main() {
   glfw_helpers::GLFWMouseController::set_mouse_button_callback(
       [&cam_control, &cam](GLFWwindow *wnd, int btn, int act, int mods) {
         cam_control.mouse_click(wnd, btn, act, mods);
-        if (btn == GLFW_MOUSE_BUTTON_LEFT) {
+        if (btn == GLFW_MOUSE_BUTTON_LEFT && act == GLFW_PRESS) {
           double cx, cy;
           glfwGetCursorPos(wnd, &cx, &cy);
           print_coords_debug_info(cam, cx, cy);
@@ -564,6 +702,9 @@ int main() {
   cam.focus_pos = glm::vec2{MASTER_ORIGIN_X, MASTER_ORIGIN_Y};
   cam.zoom = 7.227499802162154e-07;
 
+  //
+  // Roads
+  //
   RoadsUnit roads;
   if (!roads.load_shaders(SHADERS_ROOT)) {
     log_err("failed loading shaders for roads");
@@ -573,7 +714,6 @@ int main() {
     log_err("failed creating buffers for roads");
     return -1;
   }
-
   roads_shader_aa::RoadsShaderAAUnit roads_shaders_aa;
   if (!roads_shaders_aa.load_shaders(SHADERS_ROOT)) {
     log_err("failed loading shaders for roads_shaders_aa");
@@ -583,17 +723,24 @@ int main() {
     log_err("failed creating buffers roads_shaders_aa");
     return -1;
   }
+  auto [roads_data, dctx] =
+      generate_random_roads(RANDOM_ROADS_SCENE_POSITION, cam.zoom);
+  roads.set_data(roads_data);
 
-  auto [roads_data, roads_aa_data, dctx] =
-      generate_test_scene(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y));
-  // generate_random_roads(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y), cam.zoom);
-  roads.set_data(roads_data, roads_aa_data);
-
-  auto [aa_vertices, aa_indices, road_vertices, aa_ctx] =
-      generate_test_scene2(v2(MASTER_ORIGIN_X, MASTER_ORIGIN_Y), cam.zoom);
-  roads_shaders_aa.set_data(aa_vertices, aa_indices);
-
-  roads.set_data(road_vertices, {});
+  //
+  // Debug Scene
+  //
+  roads_shader_aa::RoadsShaderAAUnit debug_scene;
+  if (!debug_scene.load_shaders(SHADERS_ROOT)) {
+    log_err("failed loading shaders for debug_scene");
+    return -1;
+  }
+  if (!debug_scene.make_buffers()) {
+    log_err("failed creating buffers debug_scene");
+    return -1;
+  }
+  auto [vertices, indices] = generate_bug_scene();
+  debug_scene.set_data(vertices, indices);
 
   //
   // Lands
@@ -667,12 +814,16 @@ int main() {
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  bool draw_debug_lines = true;
+  bool show_debug_lines = true;
   bool show_world_bb = true;
   bool show_lands = true;
   bool show_lands_aa = true;
   bool camera_demo = false;
+  bool show_debug_scene = true;
+  bool show_roads = false;
   static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
+
+  AnimationsEngine animations_engine;
 
   while (!glfwWindowShouldClose(window)) {
 
@@ -700,17 +851,21 @@ int main() {
       }
     };
 
+    triangle.render_frame(cam);
     cam_control_vis.render(cam, cam_control);
-    if (draw_debug_lines) {
+
+    if (show_debug_lines) {
       road_dbg_lines.render_frame(cam);
     }
-    triangle.render_frame(cam);
-    roads.render_frame(cam);
-    roads_shaders_aa.render_frame(cam);
+
+    if (show_roads) {
+      roads.render_frame(cam);
+    }
 
     if (show_lands) {
       lands.render_frame(cam);
     }
+
     if (show_lands_aa) {
       lands_aa.render_frame(cam);
     }
@@ -718,16 +873,47 @@ int main() {
     if (show_world_bb) {
       world_frame_lines.render_frame(cam);
     }
+
+    if (show_debug_scene) {
+      debug_scene.render_frame(cam);
+    }
+
     if (g_show_crosshair) {
       crosshair.render_frame(cam);
     }
 
     ImGui::ColorEdit4("Clear color", clear_color);
-    ImGui::Checkbox("Draw debug lines", &draw_debug_lines);
+    ImGui::Checkbox("Show debug lines", &show_debug_lines);
     ImGui::Checkbox("Show world BB", &show_world_bb);
     ImGui::Checkbox("Show Lands", &show_lands);
     ImGui::Checkbox("Show Lands AA", &show_lands_aa);
     ImGui::Checkbox("Camera Demo", &camera_demo);
+    ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
+    if (ImGui::Checkbox("Show Roads", &show_roads)) {
+      if (show_roads) {
+        v2 source(cam.focus_pos.x, cam.focus_pos.y);
+        v2 target(RANDOM_ROADS_SCENE_POSITION);
+        animations_engine.add(std::make_unique<Amimation>(
+            source, target, glfwGetTime(), glfwGetTime() + 1.0,
+            [&](v2 v) {
+              cam.focus_pos.x = v.x;
+              cam.focus_pos.y = v.y;
+            },
+            [&]() {
+              log_debug("animation finished");
+              show_lands = false;
+              show_lands_aa = false;
+              show_debug_scene = false;
+              show_world_bb = false;
+              show_debug_lines = false;
+
+              // cam.zoom = 0.000185; // todo: animate
+              // todo: remove animation from engine.
+            }));
+      }
+    }
+
+    animations_engine.process_frame(glfwGetTime());
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

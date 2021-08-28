@@ -1,5 +1,6 @@
 #include "roads_shader_aa_unit.h"
 //#include <glm/glm.hpp>
+#include <common/gl_check.h>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace roads_shader_aa {
@@ -17,45 +18,41 @@ bool RoadsShaderAAUnit::load_shaders(std::string shaders_root) {
 }
 
 bool RoadsShaderAAUnit::make_buffers() {
-  glGenVertexArrays(1, &m_vao);
-  glGenBuffers(1, &m_vbo);
-  glGenBuffers(1, &m_ebo);
+  GL_CHECK(glGenVertexArrays(1, &m_vao));
+  GL_CHECK(glGenBuffers(1, &m_vbo));
+  GL_CHECK(glGenBuffers(1, &m_ebo));
 
-  glBindVertexArray(m_vao);
-  glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-  glBufferData(GL_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("aa vertices alloc error: {}", glGetError());
-  }
+  GL_CHECK(glBindVertexArray(m_vao));
+  GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, m_vbo));
+  GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 30'000'000, NULL, GL_DYNAMIC_DRAW));
 
   static_assert(sizeof(p32) == sizeof(uint32_t) * 2); // todo: fix me.
-  glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(AAVertex),
-                        (void *)offsetof(AAVertex, coords));
-  glVertexAttribIPointer(1, 1, GL_BYTE, sizeof(AAVertex),
-                         (void *)offsetof(AAVertex, is_outer));
+  GL_CHECK(glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE,
+                                 sizeof(AAVertex),
+                                 (void *)offsetof(AAVertex, coords)));
+  GL_CHECK(glVertexAttribIPointer(1, 1, GL_BYTE, sizeof(AAVertex),
+                                  (void *)offsetof(AAVertex, is_outer)));
   // glVertexAttribIPointer(2, 3, GL_UNSIGNED_BYTE, sizeof(AAVertex),
   //                        (void *)offsetof(AAVertex, color));
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
-                        (void *)offsetof(AAVertex, color));
+  GL_CHECK(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
+                                 (void *)offsetof(AAVertex, color)));
 
-  glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
-                        (void *)offsetof(AAVertex, extent_vec));
+  GL_CHECK(glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(AAVertex),
+                                 (void *)offsetof(AAVertex, extent_vec)));
 
-  glEnableVertexAttribArray(0);
-  glEnableVertexAttribArray(1);
-  glEnableVertexAttribArray(2);
-  glEnableVertexAttribArray(3);
+  GL_CHECK(glEnableVertexAttribArray(0));
+  GL_CHECK(glEnableVertexAttribArray(1));
+  GL_CHECK(glEnableVertexAttribArray(2));
+  GL_CHECK(glEnableVertexAttribArray(3));
 
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0));
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, 10'000'000, NULL, GL_DYNAMIC_DRAW);
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("aa indices alloc error: {}", glGetError());
-  }
+  GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo));
+  GL_CHECK(
+      glBufferData(GL_ELEMENT_ARRAY_BUFFER, 30'000'000, NULL, GL_DYNAMIC_DRAW));
   // DO NOT UNBIND EBO!
 
-  glBindVertexArray(0); // unbind vao.
+  GL_CHECK(glBindVertexArray(0)); // unbind vao.
 
   m_vertices_uploaded = 0;
   m_indices_uploaded = 0;
@@ -69,24 +66,18 @@ void RoadsShaderAAUnit::set_data(span<AAVertex> aa_vertices,
   assert(m_ebo != 0);
 
   glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-  glBufferSubData(GL_ARRAY_BUFFER, 0,
-                  aa_vertices.size() * sizeof(aa_vertices[0]),
-                  aa_vertices.data());
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("aa vertices set_data error: {} (points count: {})", glGetError(),
-            aa_vertices.size());
-  }
+  GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0,
+                           aa_vertices.size() * sizeof(aa_vertices[0]),
+                           aa_vertices.data()));
 
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0));
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-  glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
-                  aa_indices.size() * sizeof(aa_indices[0]), aa_indices.data());
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("aa indices set_data error: {}", glGetError());
-  }
+  GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo));
+  GL_CHECK(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
+                           aa_indices.size() * sizeof(aa_indices[0]),
+                           aa_indices.data()));
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
 
   m_vertices_uploaded = aa_vertices.size();
   m_indices_uploaded = aa_indices.size();
@@ -99,28 +90,25 @@ void RoadsShaderAAUnit::set_data(span<AAVertex> aa_vertices,
 void RoadsShaderAAUnit::render_frame(const camera::Cam2d &cam) /*override*/ {
   m_shader->attach();
   auto proj = cam.projection_maxtrix();
-  glUniformMatrix4fv(glGetUniformLocation(m_shader->id, "proj"), 1, GL_FALSE,
-                     glm::value_ptr(proj));
-  glUniform1f(glGetUniformLocation(m_shader->id, "scale"), (float)cam.zoom);
+  GL_CHECK(glUniformMatrix4fv(glGetUniformLocation(m_shader->id, "proj"), 1,
+                              GL_FALSE, glm::value_ptr(proj)));
+  GL_CHECK(glUniform1f(glGetUniformLocation(m_shader->id, "scale"),
+                       (float)cam.zoom));
 
   unsigned data[100];
   for (size_t i = 0; i < 100; ++i) {
     data[i] = i * 10;
   }
 
-  glUniform1uiv(glGetUniformLocation(m_shader->id, "data"), 100, &data[0]);
+  GL_CHECK(
+      glUniform1uiv(glGetUniformLocation(m_shader->id, "data"), 100, &data[0]));
 
   // log_debug("drawing: {}", m_indices_uploaded);
 
-  glBindVertexArray(m_vao);
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("glBindVertexArray error: {}", glGetError());
-  }
+  GL_CHECK(glBindVertexArray(m_vao));
 
-  glDrawElements(GL_TRIANGLES, m_indices_uploaded, GL_UNSIGNED_INT, 0);
-  if (glGetError() != GL_NO_ERROR) {
-    log_err("drawElements error: {}", glGetError());
-  }
+  GL_CHECK(
+      glDrawElements(GL_TRIANGLES, m_indices_uploaded, GL_UNSIGNED_INT, 0));
   glBindVertexArray(0);
   m_shader->detach();
 }

@@ -25,6 +25,9 @@ struct gpt_t {
 inline bool operator==(const gpt_t &lhs, const gpt_t &rhs) {
   return std::tie(lhs.x, lhs.y) == std::tie(rhs.x, rhs.y);
 }
+inline bool operator!=(const gpt_t &lhs, const gpt_t &rhs) {
+  return !(lhs == rhs);
+}
 
 gpt_units_t lat_to_y(double mercator_lat);
 gpt_units_t lon_to_x(double mercator_lon);
@@ -139,7 +142,7 @@ inline bool lines_intersection_impl(double p0_x, double p0_y, double p1_x,
   double s2_y = p3_y - p2_y;
 
   double det = s1_x * s2_y - s1_y * s2_x;
-  if (std::fabs(det) < 0.00001) { // todo: use EPS instead of hardcoded
+  if (std::fabs(det) < 1e-5) { // todo: use EPS instead of hardcoded
     return false;
   }
 

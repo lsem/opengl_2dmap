@@ -8,7 +8,7 @@
 #include <gg/gg.h>
 #include <tuple>
 #include <vector>
-
+#include "common/gl_check.h"
 #include "render_lib/shader_program.h"
 
 class LinesUnit : public IRenderUnit {
@@ -86,15 +86,15 @@ public:
 
     //log_debug("reuploaded {} vertices", m_geometry.size());
 
-    glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0,
-                    m_geometry.size() * sizeof(m_geometry[0]), m_geometry.data());
-    glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo));
+    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0,
+                    m_geometry.size() * sizeof(m_geometry[0]), m_geometry.data()));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0)); // unbind
 
-    glBindBuffer(GL_ARRAY_BUFFER, this->m_colors_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, m_colors.size() * sizeof(m_colors[0]),
-                    m_colors.data());
-    glBindBuffer(GL_ARRAY_BUFFER, 0); // unbind
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, this->m_colors_vbo));
+    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, m_colors.size() * sizeof(m_colors[0]),
+                    m_colors.data()));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0)); // unbind
   }
 
   bool load_shaders(std::string shaders_root) {
@@ -118,11 +118,11 @@ public:
       reupload_geometry();
       m_dirty = false;
     }
-    glUseProgram(m_shader->id);
+    GL_CHECK(glUseProgram(m_shader->id));
     auto proj = camera.projection_maxtrix();
-    glUniformMatrix4fv(glGetUniformLocation(m_shader->id, "proj"), 1, GL_FALSE,
-                       glm::value_ptr(proj));
-    glBindVertexArray(m_vao);
-    glDrawArrays(GL_LINES, 0, m_geometry.size() / 2);
+    GL_CHECK(glUniformMatrix4fv(glGetUniformLocation(m_shader->id, "proj"), 1, GL_FALSE,
+                       glm::value_ptr(proj)));
+    GL_CHECK(glBindVertexArray(m_vao));
+    GL_CHECK(glDrawArrays(GL_LINES, 0, m_geometry.size() / 2));
   }
 };

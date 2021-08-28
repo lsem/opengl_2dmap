@@ -22,9 +22,6 @@ struct ColoredVertex {
 class RoadsUnit : public IRenderUnit {
   unsigned m_vao = 0;
   unsigned m_vbo = 0;
-  unsigned m_ebo;
-  unsigned m_aa_vao = 0;
-  unsigned m_aa_vbo = 0;
 
   size_t m_vertices_uploaded = 0;
   size_t m_aa_vertices_uploaded = 0;
@@ -33,7 +30,7 @@ class RoadsUnit : public IRenderUnit {
   // This unit is not going to own its resources directly?
 public:
   bool load_shaders(std::string shaders_root);
-  void set_data(span<p32> vertex_data, span<ColoredVertex> aa_vertex_data);
+  void set_data(span<p32> vertex_data);
   bool make_buffers(); // todo: should not be part of interface.
   virtual void render_frame(const camera::Cam2d &cam) override;
 };

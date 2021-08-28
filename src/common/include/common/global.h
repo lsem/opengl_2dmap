@@ -1,20 +1,24 @@
 #pragma once
 
 #include "gg/gg.h"
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <tuple>
-#include <filesystem>
+#include <vector>
 
 #include "span.hpp"
+#include <fmt/color.h>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 using std::string;
 using std::string_view;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
-using std::tuple;
 
 using nonstd::span;
 
