@@ -785,6 +785,10 @@ int main() {
 
   animations::AnimationsEngine animations_engine;
 
+  enum class Scene { roads, world_lands };
+
+  Scene scene_selected = Scene::world_lands;
+
   while (!glfwWindowShouldClose(window)) {
 
     if (camera_demo) {
@@ -843,7 +847,8 @@ int main() {
     }
 
     ImGui::ListBoxHeader("Scenes", 3);
-    if (ImGui::Selectable("Random Roads", true)) {
+    if (ImGui::Selectable("Random Roads", scene_selected == Scene::roads)) {
+      scene_selected = Scene::roads;
       log_debug("Camera goes to random roads scene...");
       show_lands = false;
       show_lands_aa = false;
@@ -858,18 +863,22 @@ int main() {
             });
           });
     }
-    if (ImGui::Selectable("World Lands", false)) {
+    if (ImGui::Selectable("World Lands",
+                          scene_selected == Scene::world_lands)) {
+      scene_selected = Scene::world_lands;
       log_debug("Camera goes to World Lands scene...");
       show_roads = false;
       show_debug_scene = false;
       show_world_bb = false;
       show_lands = true;
       show_lands_aa = true;
-      animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 500ms, [&]() {
-        animations_engine.animate(
-            &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 500ms,
-            []() { log_debug("Camera goes to World Lands scene...DONE"); });
-      });
+      animations_engine.animate(
+          &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 500ms,
+          [&]() {
+            animations_engine.animate(
+                &cam.zoom, 2.554975674209204e-07, 500ms,
+                []() { log_debug("Camera goes to World Lands scene...DONE"); });
+          });
     }
     ImGui::ListBoxFooter();
 
