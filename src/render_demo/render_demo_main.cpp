@@ -823,13 +823,11 @@ int main() {
       show_world_bb = false;
       show_lands = true;
       show_lands_aa = true;
-      animations_engine.animate(
-          &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 500ms,
-          [&]() {
-            animations_engine.animate(
-                &cam.zoom, 2.554975674209204e-07, 500ms,
-                []() { log_debug("Camera goes to World Lands scene...DONE"); });
-          });
+      cam.zoom = 1.9830403292225845e-09;
+      cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
+      animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 1s, []() {
+        log_debug("Camera goes to World Lands scene...DONE");
+      });
     }
     ImGui::ListBoxFooter();
 
