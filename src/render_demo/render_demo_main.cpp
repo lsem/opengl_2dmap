@@ -785,8 +785,6 @@ int main() {
 
   animations::AnimationsEngine animations_engine;
 
-  double test_param = 1.0;
-
   while (!glfwWindowShouldClose(window)) {
 
     if (camera_demo) {
@@ -844,38 +842,46 @@ int main() {
       crosshair.render_frame(cam);
     }
 
+    ImGui::ListBoxHeader("Scenes", 3);
+    if (ImGui::Selectable("Random Roads", true)) {
+      log_debug("Camera goes to random roads scene...");
+      show_lands = false;
+      show_lands_aa = false;
+      show_debug_scene = false;
+      show_world_bb = false;
+      show_debug_lines = false;
+      show_roads = true;
+      animations_engine.animate(
+          &cam.focus_pos, glm::vec2(2421879040, 2732077056), 500ms, [&]() {
+            animations_engine.animate(&cam.zoom, 0.000185, 500ms, []() {
+              log_debug("Camera goes to random roads scene... DONE");
+            });
+          });
+    }
+    if (ImGui::Selectable("World Lands", false)) {
+      log_debug("Camera goes to World Lands scene...");
+      show_roads = false;
+      show_debug_scene = false;
+      show_world_bb = false;
+      show_lands = true;
+      show_lands_aa = true;
+      animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 500ms, [&]() {
+        animations_engine.animate(
+            &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 500ms,
+            []() { log_debug("Camera goes to World Lands scene...DONE"); });
+      });
+    }
+    ImGui::ListBoxFooter();
+
     ImGui::ColorEdit4("Clear color", clear_color);
     ImGui::Checkbox("Show debug lines", &show_debug_lines);
     ImGui::Checkbox("Show world BB", &show_world_bb);
-    if (ImGui::Checkbox("Show Lands", &show_lands)) {
-      if (show_lands) {
-        show_roads = false;
-        show_debug_scene = false;
-        show_world_bb = false;
-        show_lands_aa = true;
-        animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 2s, [&]() {
-          animations_engine.animate(
-              &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 1s);
-        });
-      }
-    }
+    if (ImGui::Checkbox("Show Lands", &show_lands))
+      ;
     ImGui::Checkbox("Show Lands AA", &show_lands_aa);
     ImGui::Checkbox("Camera Demo", &camera_demo);
     ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
-    if (ImGui::Checkbox("Show Roads", &show_roads)) {
-      if (show_roads) {
-        log_debug("starting!");
-        animations_engine.animate(
-            &cam.focus_pos, glm::vec2(2421879040, 2732077056), 2s, [&]() {
-              show_lands = false;
-              show_lands_aa = false;
-              show_debug_scene = false;
-              show_world_bb = false;
-              show_debug_lines = false;
-              animations_engine.animate(&cam.zoom, 0.000185, 1s);
-            });
-      }
-    }
+    ImGui::Checkbox("Show Roads", &show_roads);
 
     animations_engine.process_frame();
 
