@@ -32,6 +32,7 @@
 #include "render_units/roads_shader_aa/make_geometry.h"
 #include "render_units/roads_shader_aa/roads_shader_aa_unit.h"
 #include "render_units/triangle/render_triangle.h"
+#include <type_traits>
 
 #include "render_lib/debug_ctx.h"
 #include "render_lib/shader_program.h"
@@ -43,8 +44,7 @@
 #include <mapbox/earcut.hpp>
 
 #include <map_compiler_lib.h>
-
-#include "test_data.h"
+#include <render_lib/animations.h>
 
 using camera::Cam2d;
 using camera_control::CameraControl;
@@ -65,47 +65,6 @@ const v2 RANDOM_ROADS_SCENE_POSITION(MASTER_ORIGIN_X, MASTER_ORIGIN_Y);
 
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
-
-struct Amimation {
-  Amimation(v2 source_value, v2 target_value, double start_time,
-            double finish_time, std::function<void(v2)> progress_cb,
-            std::function<void()> finish_cb)
-      : source_value(source_value), target_value(target_value),
-        start_time(start_time), finish_time(finish_time), finish_cb(finish_cb),
-        progress_cb(progress_cb), enabled(true) {}
-  v2 source_value;
-  v2 target_value;
-  double start_time;
-  double finish_time;
-  std::function<void(v2)> progress_cb;
-  std::function<void()> finish_cb;
-  bool enabled;
-};
-
-struct AnimationsEngine {
-  vector<std::unique_ptr<Amimation>> animations;
-
-  void add(std::unique_ptr<Amimation> animation) {
-    this->animations.emplace_back(std::move(animation));
-  }
-
-  void process_frame(double current_time) {
-    for (auto &anim : animations) {
-      if (!anim->enabled) {
-        continue;
-      }
-      const double t = (current_time - anim->start_time) /
-                       (anim->finish_time - anim->start_time);
-      if (t >= 1.0) {
-        anim->enabled = false;
-        anim->finish_cb();
-      } else {
-        anim->progress_cb(anim->source_value +
-                          (anim->target_value - anim->source_value) * t);
-      }
-    }
-  }
-};
 
 void update_fps_counter(GLFWwindow *window) {
   static double previous_seconds = glfwGetTime();
@@ -144,7 +103,8 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   g_window_height = height;
 
   // make sure the viewport matches the new window dimensions; note that width
-  // and height will be significantly larger than specified on retina displays.
+  // and height will be significantly larger than specified on retina
+  // displays.
   glViewport(0, 0, width, height);
 }
 
@@ -823,7 +783,9 @@ int main() {
   bool show_roads = false;
   static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
 
-  AnimationsEngine animations_engine;
+  animations::AnimationsEngine animations_engine;
+
+  double test_param = 1.0;
 
   while (!glfwWindowShouldClose(window)) {
 
@@ -885,35 +847,37 @@ int main() {
     ImGui::ColorEdit4("Clear color", clear_color);
     ImGui::Checkbox("Show debug lines", &show_debug_lines);
     ImGui::Checkbox("Show world BB", &show_world_bb);
-    ImGui::Checkbox("Show Lands", &show_lands);
+    if (ImGui::Checkbox("Show Lands", &show_lands)) {
+      if (show_lands) {
+        show_roads = false;
+        show_debug_scene = false;
+        show_world_bb = false;
+        show_lands_aa = true;
+        animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 2s, [&]() {
+          animations_engine.animate(
+              &cam.focus_pos, glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2), 1s);
+        });
+      }
+    }
     ImGui::Checkbox("Show Lands AA", &show_lands_aa);
     ImGui::Checkbox("Camera Demo", &camera_demo);
     ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
     if (ImGui::Checkbox("Show Roads", &show_roads)) {
       if (show_roads) {
-        v2 source(cam.focus_pos.x, cam.focus_pos.y);
-        v2 target(RANDOM_ROADS_SCENE_POSITION);
-        animations_engine.add(std::make_unique<Amimation>(
-            source, target, glfwGetTime(), glfwGetTime() + 1.0,
-            [&](v2 v) {
-              cam.focus_pos.x = v.x;
-              cam.focus_pos.y = v.y;
-            },
-            [&]() {
-              log_debug("animation finished");
+        log_debug("starting!");
+        animations_engine.animate(
+            &cam.focus_pos, glm::vec2(2421879040, 2732077056), 2s, [&]() {
               show_lands = false;
               show_lands_aa = false;
               show_debug_scene = false;
               show_world_bb = false;
               show_debug_lines = false;
-
-              // cam.zoom = 0.000185; // todo: animate
-              // todo: remove animation from engine.
-            }));
+              animations_engine.animate(&cam.zoom, 0.000185, 1s);
+            });
       }
     }
 
-    animations_engine.process_frame(glfwGetTime());
+    animations_engine.process_frame();
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
