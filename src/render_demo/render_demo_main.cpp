@@ -205,27 +205,6 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
             auto c_u =
                 std::make_tuple(gg::mercator::unproject_lon(gg::x_to_lon(c.x)),
                                 gg::mercator::unproject_lat(gg::y_to_lat(c.y)));
-
-            if ((len(gg::v2(a, b)) > gg::U32_MAX / 8) ||
-                (len(gg::v2(b, c)) > gg::U32_MAX / 8) ||
-                (len(gg::v2(c, a)) > gg::U32_MAX / 8)) {
-              log_err("Found fault side: {}: {}/{}/{} ({}; {}; {})", parn_n,
-                      aa_indices[i - 2], aa_indices[i - 1], aa_indices[i - 0],
-                      a_u, b_u, c_u);
-
-              // log_err("Found fault side: {} ({:>30} ; {:>30}; {:>30})", i -
-              // 2,
-              //         a_u, b_u, c_u);
-              // assert(false);
-            }
-
-            // if (i - 2 == 489930) {
-            //   log_err("Found fault side: {} ({}; {}; {})", i - 2, a_u, b_u,
-            //           c_u);
-            //   log_debug("i-2: {}", aa_indices[i - 2]);
-            //   log_debug("i-1: {}", aa_indices[i]);
-            //   log_debug("i: {}", aa_indices[i]);
-            // }
           }
         } // debug scope
 
@@ -233,23 +212,7 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
         current_aa_indiices_offset += aa_indices_generated;
 
         total_aa_time += std::chrono::steady_clock::now() - aa_start_time;
-
-        // if (parn_n == 5) {
-        // log_warn("part 4!:");
-        for (int i = 0; i < part.size(); i++) {
-          auto x = part[i].x;
-          auto y = part[i].y;
-          double lon = gg::mercator::unproject_lon(gg::x_to_lon(x));
-          double lat = gg::mercator::unproject_lat(gg::y_to_lat(y));
-          if (std::abs(lat - (-36.86)) < 0.1 &&
-              std::abs((lon - -56.66)) < 0.1) {
-            log_warn("found!: {} ({}) ({},{})", i, part[i], lat, lon);
-            // assert(false);
-          }
-        }
-        //}
         parn_n++;
-
       } // parts
 
     } // shapes
@@ -273,16 +236,6 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
   }
   aa_vertices.resize(current_aa_vertices_offset);
   aa_indices.resize(current_aa_indiices_offset);
-
-  log_debug("bugs here");
-  for (size_t i = 489920; i < 489935; i += 1) {
-    log_debug("{}", aa_vertices[i].coords);
-  }
-
-  log_debug("corresponding original outline expected to behere");
-  for (size_t i = 489920 / 2; i < 489935 / 2; i += 2) {
-    log_debug("{}", vertices[i]);
-  }
 
   for (auto &v : aa_vertices) {
     v.color[0] = 0.53;
