@@ -79,7 +79,7 @@ Index of this file:
 #endif
 #pragma clang diagnostic ignored "-Wunknown-pragmas" // warning: unknown warning group 'xxx'
 #pragma clang diagnostic ignored "-Wold-style-cast"  // warning: use of old-style cast // yes, they
-                                                    // are more terse.
+                                                     // are more terse.
 #pragma clang diagnostic ignored                                                                   \
     "-Wfloat-equal" // warning: comparing floating point with == or != is unsafe // storing and
                     // comparing against same constants (typically 0.0f) is ok.
@@ -99,10 +99,10 @@ Index of this file:
 #pragma clang diagnostic ignored                                                                   \
     "-Wenum-enum-conversion" // warning: bitwise operation between different enumeration types
                              // ('XXXFlags_' and 'XXXFlagsPrivate_')
-#pragma clang diagnostic                                                                           \
-    ignored "-Wdeprecated-enum-enum-conversion" // warning: bitwise operation between different
-                                                // enumeration types ('XXXFlags_' and
-                                                // 'XXXFlagsPrivate_') is deprecated
+#pragma clang diagnostic ignored                                                                   \
+    "-Wdeprecated-enum-enum-conversion" // warning: bitwise operation between different
+                                        // enumeration types ('XXXFlags_' and
+                                        // 'XXXFlagsPrivate_') is deprecated
 #pragma clang diagnostic ignored                                                                   \
     "-Wimplicit-int-float-conversion" // warning: implicit conversion from 'xxx' to 'float' may lose
                                       // precision
