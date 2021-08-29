@@ -30,14 +30,13 @@ inline double duration_as_double(steady_clock::duration d) {
 // This ugly thing in general not needed. Added only until glm:: stuff still
 // here and needs to be animated.
 template <typename Value> struct Multiply {
-  Value operator()(const Value &value, double t) {
+  static Value apply(const Value &value, double t) {
     assert(t >= 0.0 && t <= 1.0);
     return value * t;
   }
 };
-
 template <> struct Multiply<glm::vec2> {
-  glm::vec2 operator()(const glm::vec2 &value, double t) {
+  static glm::vec2 apply(const glm::vec2 &value, double t) {
     assert(t >= 0.0 && t <= 1.0);
     return glm::vec2(value.x * t, value.y * t);
   }
@@ -62,10 +61,10 @@ void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
       *anim->animated_value = anim->target_value;
       anim->finish_cb();
     } else {
-      details::Multiply<Value> multiply;
-      *anim->animated_value =
-          anim->source_value +
-          multiply((anim->target_value - anim->source_value), t);
+
+      *anim->animated_value = anim->source_value +
+                              details::Multiply<Value>::apply(
+                                  (anim->target_value - anim->source_value), t);
     }
   }
 }
