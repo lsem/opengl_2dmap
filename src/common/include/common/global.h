@@ -7,6 +7,7 @@
 #include <string_view>
 #include <tuple>
 #include <vector>
+#include <chrono>
 
 #include "span.hpp"
 #include <fmt/color.h>
@@ -28,3 +29,5 @@ using gg::v2;
 namespace fs = std::filesystem;
 
 using namespace std::chrono_literals;
+
+using steady_clock = std::chrono::steady_clock;
