@@ -809,12 +809,10 @@ int main() {
       show_world_bb = false;
       show_debug_lines = false;
       show_roads = true;
-      animations_engine.animate(
-          &cam.focus_pos, glm::vec2(2421879040, 2732077056), 500ms, [&]() {
-            animations_engine.animate(&cam.zoom, 0.000185, 500ms, []() {
-              log_debug("Camera goes to random roads scene... DONE");
-            });
-          });
+      cam.focus_pos = glm::vec2(2421879040, 2732077056);
+      animations_engine.animate(&cam.zoom, 0.000185, 1s, []() {
+        log_debug("Camera goes to random roads scene... DONE");
+      });
     }
     if (ImGui::Selectable("World Lands",
                           scene_selected == Scene::world_lands)) {
