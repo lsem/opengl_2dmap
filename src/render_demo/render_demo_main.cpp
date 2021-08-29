@@ -825,7 +825,7 @@ int main() {
       show_lands_aa = true;
       cam.zoom = 1.9830403292225845e-09;
       cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
-      animations_engine.animate(&cam.zoom, 2.554975674209204e-07, 1s, []() {
+      animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s, []() {
         log_debug("Camera goes to World Lands scene...DONE");
       });
     }
