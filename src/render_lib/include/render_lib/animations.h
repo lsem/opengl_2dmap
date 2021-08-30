@@ -56,7 +56,8 @@ inline void process_tick(vector<Animation<Value>> &animations,
             *anim.animated_value = anim.target_value;
             anim.finish_cb();
         } else {
-            *anim.animated_value = (anim.target_value - anim.source_value) * anim.easing_func(t);
+            *anim.animated_value =
+                anim.source_value + (anim.target_value - anim.source_value) * anim.easing_func(t);
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
