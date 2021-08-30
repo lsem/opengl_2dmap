@@ -65,6 +65,9 @@ void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
                 details::Multiply<Value>::apply((anim->target_value - anim->source_value), t);
         }
     }
+    animations.erase(std::remove_if(std::begin(animations), std::end(animations),
+                                    [](auto &anim) { return anim->enabled; }),
+                     std::end(animations));
 }
 
 void do_nothing() {}
