@@ -24,6 +24,7 @@
 #include "render_lib/camera.h"
 #include "render_lib/camera_control.h"
 #include "render_lib/camera_control_visuals.h"
+#include "render_units/animatable_line/animatable_line.h"
 #include "render_units/crosshair/crosshair_unit.h"
 #include "render_units/lands/lands.h"
 #include "render_units/lines/lines_unit.h"
@@ -694,6 +695,40 @@ int main() {
     world_lines.emplace_back(gg::v2(0, gg::U32_MAX), gg::v2(0, 0), colors::magenta);
     world_frame_lines.assign_lines(world_lines);
 
+    //
+    // Animatable line
+    //
+
+    animatable_line::AnimatableLine animatable_line;
+    if (!animatable_line.load_shaders(SHADERS_ROOT)) {
+        log_err("failed laoding animatable_line shaders");
+        return -1;
+    }
+    if (!animatable_line.make_buffers()) {
+        log_err("failed making animatable_line buffers");
+        return -1;
+    }
+    vector<p32> simplest_line({p32(1596476416, 2683028992), p32(1597240064, 2683174912)});
+    v2 ab(simplest_line[0], simplest_line[1]);
+    v2 pab(-ab.y, ab.x);
+    v2 npab = normalized(pab);
+    v2 d = npab * 20000;
+    v2 q = npab * -20000;
+    v2 p1 = simplest_line[0] + d;
+    v2 p2 = simplest_line[0] + q;
+    v2 p3 = simplest_line[1] + q;
+    v2 p4 = simplest_line[1] + d;
+    vector<animatable_line::Vertex> al_vertices;
+    for (auto p : {p1, p2, p3, p4}) {
+        al_vertices.emplace_back(gg::v22p(p), 1.0);
+    }
+    al_vertices[0].t = 0.0;
+    al_vertices[1].t = 0.0;
+    al_vertices[2].t = 1.0;
+    al_vertices[3].t = 1.0;
+    vector<uint32_t> al_indices({0, 1, 2, 2, 3, 0});
+    animatable_line.set_data(al_vertices, al_indices);
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -704,11 +739,12 @@ int main() {
     bool camera_demo = false;
     bool show_debug_scene = true;
     bool show_roads = false;
+    bool show_animatable_line = false;
     static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
 
     animations::AnimationsEngine animations_engine;
 
-    enum class Scene { roads, world_lands };
+    enum class Scene { roads, world_lands, show_animatable_line };
 
     Scene scene_selected = Scene::world_lands;
 
@@ -764,6 +800,10 @@ int main() {
             debug_scene.render_frame(cam);
         }
 
+        if (show_animatable_line) {
+            animatable_line.render_frame(cam);
+        }
+
         if (g_show_crosshair) {
             crosshair.render_frame(cam);
         }
@@ -797,6 +837,21 @@ int main() {
                 log_debug("Camera goes to World Lands scene...DONE");
             });
         }
+        if (ImGui::Selectable("Animatable line", scene_selected == Scene::show_animatable_line)) {
+            scene_selected = Scene::show_animatable_line;
+            show_lands = false;
+            show_lands_aa = false;
+            show_debug_scene = false;
+            show_world_bb = false;
+            show_debug_lines = false;
+            show_roads = false;
+            show_animatable_line = true;
+            auto center = v2(al_vertices[0].coords) +
+                          (v2(al_vertices[2].coords) - v2(al_vertices[0].coords)) / 2.0;
+            cam.focus_pos = glm::vec2(center.x, center.y);
+            cam.zoom = 1.7525271027355085e-05;
+            animations_engine.animate(&cam.zoom, 0.001288400, 1s);
+        }
         ImGui::ListBoxFooter();
 
         ImGui::ColorEdit4("Clear color", clear_color);
@@ -808,6 +863,7 @@ int main() {
         ImGui::Checkbox("Camera Demo", &camera_demo);
         ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
         ImGui::Checkbox("Show Roads", &show_roads);
+        ImGui::Checkbox("Show Animatable Line", &show_animatable_line);
 
         animations_engine.tick();
 
