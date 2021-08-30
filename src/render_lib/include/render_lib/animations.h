@@ -18,10 +18,11 @@ auto default_ = ease_out_quad;
 } // namespace easing_funcs
 
 template <typename Value> struct Animation {
-    Animation(Value *animated_value, Value target_value, steady_clock::duration duration,
-              easing_func_t easing_func, std::function<void()> finish_cb)
+    Animation(Value *animated_value, Value target_value, steady_clock::time_point start_time,
+              steady_clock::duration duration, easing_func_t easing_func,
+              std::function<void()> finish_cb)
         : animated_value(animated_value), source_value(*animated_value), target_value(target_value),
-          start_time(steady_clock::now()), duration(duration), easing_func(easing_func),
+          start_time(start_time), duration(duration), easing_func(easing_func),
           finish_cb(finish_cb), completed(false) {}
 
     Value *animated_value;
@@ -84,15 +85,16 @@ struct AnimationsEngine {
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
                  std::function<void()> finish_cb = do_nothing) {
-        this->add(animations::Animation<Value>(value_ref, target_value, duration,
-                                               easing_funcs::default_, std::move(finish_cb)));
+        this->add(animations::Animation<Value>(value_ref, target_value, steady_clock::now(),
+                                               duration, easing_funcs::default_,
+                                               std::move(finish_cb)));
     }
 
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
                  easing_func_t easing_func, std::function<void()> finish_cb = do_nothing) {
-        this->add(animations::Animation<Value>(value_ref, target_value, duration, easing_func,
-                                               do_nothing));
+        this->add(animations::Animation<Value>(value_ref, target_value, steady_clock::now(),
+                                               duration, easing_func, do_nothing));
     }
 
     template <typename Value> void add(Animation<Value> animation) {
