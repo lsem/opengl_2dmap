@@ -230,4 +230,9 @@ namespace utils {
 std::vector<p32> eliminate_parallel_segments(std::vector<p32> points);
 }
 
+inline p32 v22p(v2 v) {
+    // tip: round can be appropriate.
+    return p32(static_cast<gpt_units_t>(v.x), static_cast<gpt_units_t>(v.y));
+}
+
 } // namespace gg
