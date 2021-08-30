@@ -10,15 +10,15 @@ template <typename Value> struct Animation {
     Animation(Value *animated_value, Value target_value, steady_clock::duration duration,
               std::function<void()> finish_cb)
         : animated_value(animated_value), source_value(*animated_value), target_value(target_value),
-          start_time(steady_clock::now()), duration(duration), finish_cb(finish_cb), enabled(true) {
-    }
+          start_time(steady_clock::now()), duration(duration), finish_cb(finish_cb),
+          completed(false) {}
     Value *animated_value;
     Value source_value;
     Value target_value;
     steady_clock::time_point start_time;
     steady_clock::duration duration;
     std::function<void()> finish_cb;
-    bool enabled;
+    bool completed;
 };
 
 namespace details {
@@ -41,21 +41,16 @@ template <> struct Multiply<glm::vec2> {
     }
 };
 
-} // namespace details
-
 template <typename Value>
-void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
-                  steady_clock::time_point current_time) {
+inline void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
+                         steady_clock::time_point current_time) {
     for (auto &anim : animations) {
-        if (!anim->enabled) {
-            continue;
-        }
-
+        assert(!anim->completed);
         const double t = std::clamp(details::duration_as_double(current_time - anim->start_time) /
                                         details::duration_as_double(anim->duration),
                                     0.0, 1.0);
         if (t == 1.0) {
-            anim->enabled = false;
+            anim->completed = true;
             *anim->animated_value = anim->target_value;
             anim->finish_cb();
         } else {
@@ -66,9 +61,10 @@ void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
-                                    [](auto &anim) { return anim->enabled; }),
+                                    [](auto &anim) { return anim->completed; }),
                      std::end(animations));
 }
+} // namespace details
 
 void do_nothing() {}
 
@@ -97,9 +93,9 @@ struct AnimationsEngine {
     }
 
     void process_frame(steady_clock::time_point current_time = steady_clock::now()) {
-        process_tick(this->v2_animations, current_time);
-        process_tick(this->double_animations, current_time);
-        process_tick(this->glmvec2_animations, current_time);
+        details::process_tick(this->v2_animations, current_time);
+        details::process_tick(this->double_animations, current_time);
+        details::process_tick(this->glmvec2_animations, current_time);
     }
 };
 } // namespace animations
