@@ -740,7 +740,7 @@ int main() {
     bool show_debug_scene = true;
     bool show_roads = false;
     bool show_animatable_line = false;
-    static float clear_color[4] = {1.0, 1.0, 1.0, 1.0};
+    static float clear_color[4] = {0.0, 0.0, 0.0, 1.0};
 
     animations::AnimationsEngine animations_engine;
 
