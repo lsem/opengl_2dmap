@@ -10,8 +10,8 @@ using easing_func_t = double (*)(double);
 
 namespace easing_funcs {
 
-double linear(double t) { return t; }
-double ease_out_quad(double t) { return t * (2.0 - t); }
+inline double linear(double t) { return t; }
+inline double ease_out_quad(double t) { return t * (2.0 - t); }
 
 auto default_ = ease_out_quad;
 
@@ -40,16 +40,8 @@ inline double duration_as_double(steady_clock::duration d) {
     return std::chrono::duration_cast<std::chrono::microseconds>(d).count() * 1'000'000.0;
 }
 
-// This ugly thing in general not needed. Added only until glm:: stuff still
-// here and needs to be animated.
-template <typename Value> struct Multiply {
-    static Value apply(const Value &value, double t) { return value * t; }
-};
-template <> struct Multiply<glm::vec2> {
-    static glm::vec2 apply(const glm::vec2 &value, double t) {
-        return glm::vec2(value.x * t, value.y * t);
-    }
-};
+// For some reason, glm vec scalar multiplication produces 1-d vector..
+inline glm::vec2 operator*(const glm::vec2 &v, double d) { return glm::vec2(v.x * d, v.y * d); }
 
 template <typename Value>
 inline void process_tick(vector<Animation<Value>> &animations,
@@ -65,8 +57,7 @@ inline void process_tick(vector<Animation<Value>> &animations,
             *anim.animated_value = anim.target_value;
             anim.finish_cb();
         } else {
-            *anim.animated_value =
-                details::Multiply<Value>::apply(anim.target_value - anim.source_value, et);
+            *anim.animated_value = (anim.target_value - anim.source_value) * et;
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
@@ -109,7 +100,7 @@ struct AnimationsEngine {
         }
     }
 
-    void process_frame(steady_clock::time_point current_time = steady_clock::now()) {
+    void tick(steady_clock::time_point current_time = steady_clock::now()) {
         details::process_tick(this->v2_animations, current_time);
         details::process_tick(this->double_animations, current_time);
         details::process_tick(this->glmvec2_animations, current_time);

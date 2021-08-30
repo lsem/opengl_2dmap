@@ -809,7 +809,7 @@ int main() {
         ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
         ImGui::Checkbox("Show Roads", &show_roads);
 
-        animations_engine.process_frame();
+        animations_engine.tick();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
