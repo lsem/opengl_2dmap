@@ -23,7 +23,7 @@ bool RoadsShaderAAUnit::make_buffers() {
 
     GL_CHECK(glBindVertexArray(m_vao));
     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, m_vbo));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 30'000'000, NULL, GL_DYNAMIC_DRAW));
+    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 100'000'000, NULL, GL_DYNAMIC_DRAW));
 
     static_assert(sizeof(p32) == sizeof(uint32_t) * 2); // todo: fix me.
     GL_CHECK(glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(AAVertex),
@@ -46,7 +46,7 @@ bool RoadsShaderAAUnit::make_buffers() {
     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0));
 
     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 30'000'000, NULL, GL_DYNAMIC_DRAW));
+    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 60'000'000, NULL, GL_DYNAMIC_DRAW));
     // DO NOT UNBIND EBO!
 
     GL_CHECK(glBindVertexArray(0)); // unbind vao.
@@ -75,9 +75,6 @@ void RoadsShaderAAUnit::set_data(span<AAVertex> aa_vertices, span<uint32_t> aa_i
 
     m_vertices_uploaded = aa_vertices.size();
     m_indices_uploaded = aa_indices.size();
-
-    log_debug("aa: ertices_uploaded: {}", m_vertices_uploaded);
-    log_debug("aa: indices_uploaded: {}", m_indices_uploaded);
 }
 
 /*virtual*/
