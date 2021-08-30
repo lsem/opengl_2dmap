@@ -51,25 +51,25 @@ template <> struct Multiply<glm::vec2> {
 };
 
 template <typename Value>
-inline void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
+inline void process_tick(vector<Animation<Value>> &animations,
                          steady_clock::time_point current_time) {
     for (auto &anim : animations) {
-        assert(!anim->completed);
-        const double t = std::clamp(details::duration_as_double(current_time - anim->start_time) /
-                                        details::duration_as_double(anim->duration),
+        assert(!anim.completed);
+        const double t = std::clamp(details::duration_as_double(current_time - anim.start_time) /
+                                        details::duration_as_double(anim.duration),
                                     0.0, 1.0);
-        const double et = anim->easing_func(t);
+        const double et = anim.easing_func(t);
         if (std::abs(et - 1.0) < 1e-3) {
-            anim->completed = true;
-            *anim->animated_value = anim->target_value;
-            anim->finish_cb();
+            anim.completed = true;
+            *anim.animated_value = anim.target_value;
+            anim.finish_cb();
         } else {
-            *anim->animated_value =
-                details::Multiply<Value>::apply(anim->target_value - anim->source_value, et);
+            *anim.animated_value =
+                details::Multiply<Value>::apply(anim.target_value - anim.source_value, et);
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
-                                    [](auto &anim) { return anim->completed; }),
+                                    [](auto &anim) { return anim.completed; }),
                      std::end(animations));
 }
 } // namespace details
@@ -77,25 +77,25 @@ inline void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
 void do_nothing() {}
 
 struct AnimationsEngine {
-    vector<unique_ptr<Animation<v2>>> v2_animations;
-    vector<unique_ptr<Animation<double>>> double_animations;
-    vector<unique_ptr<Animation<glm::vec2>>> glmvec2_animations;
+    vector<Animation<v2>> v2_animations;
+    vector<Animation<double>> double_animations;
+    vector<Animation<glm::vec2>> glmvec2_animations;
 
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
                  std::function<void()> finish_cb = do_nothing) {
-        this->add(std::make_unique<animations::Animation<Value>>(
-            value_ref, target_value, duration, easing_funcs::default_, std::move(finish_cb)));
+        this->add(animations::Animation<Value>(value_ref, target_value, duration,
+                                               easing_funcs::default_, std::move(finish_cb)));
     }
 
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
                  easing_func_t easing_func, std::function<void()> finish_cb = do_nothing) {
-        this->add(std::make_unique<animations::Animation<Value>>(value_ref, target_value, duration,
-                                                                 easing_func, do_nothing));
+        this->add(animations::Animation<Value>(value_ref, target_value, duration, easing_func,
+                                               do_nothing));
     }
 
-    template <typename Value> void add(std::unique_ptr<Animation<Value>> animation) {
+    template <typename Value> void add(Animation<Value> animation) {
         if constexpr (std::is_same_v<Value, v2>) {
             this->v2_animations.emplace_back(std::move(animation));
         } else if constexpr (std::is_same_v<Value, double>) {
