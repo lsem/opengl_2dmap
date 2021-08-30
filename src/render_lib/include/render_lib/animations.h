@@ -51,13 +51,12 @@ inline void process_tick(vector<Animation<Value>> &animations,
         const double t = std::clamp(details::duration_as_double(current_time - anim.start_time) /
                                         details::duration_as_double(anim.duration),
                                     0.0, 1.0);
-        const double et = anim.easing_func(t);
-        if (std::abs(et - 1.0) < 1e-3) {
+        if (std::abs(t - 1.0) < 1e-3) {
             anim.completed = true;
             *anim.animated_value = anim.target_value;
             anim.finish_cb();
         } else {
-            *anim.animated_value = (anim.target_value - anim.source_value) * et;
+            *anim.animated_value = (anim.target_value - anim.source_value) * anim.easing_func(t);
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
