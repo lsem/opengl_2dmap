@@ -6,17 +6,28 @@
 
 namespace animations {
 
+using easing_func_t = double (*)(double);
+
+namespace easing_funcs {
+
+double linear(double t) { return t; };
+double ease_out_quad(double t) { return t * (2.0 - t); };
+
+} // namespace easing_funcs
+
 template <typename Value> struct Animation {
     Animation(Value *animated_value, Value target_value, steady_clock::duration duration,
-              std::function<void()> finish_cb)
+              easing_func_t easing_func, std::function<void()> finish_cb)
         : animated_value(animated_value), source_value(*animated_value), target_value(target_value),
-          start_time(steady_clock::now()), duration(duration), finish_cb(finish_cb),
-          completed(false) {}
+          start_time(steady_clock::now()), duration(duration), easing_func(easing_func),
+          finish_cb(finish_cb), completed(false) {}
+
     Value *animated_value;
     Value source_value;
     Value target_value;
     steady_clock::time_point start_time;
     steady_clock::duration duration;
+    easing_func_t easing_func;
     std::function<void()> finish_cb;
     bool completed;
 };
@@ -46,18 +57,16 @@ inline void process_tick(vector<unique_ptr<Animation<Value>>> &animations,
                          steady_clock::time_point current_time) {
     for (auto &anim : animations) {
         assert(!anim->completed);
-        const double t = std::clamp(details::duration_as_double(current_time - anim->start_time) /
-                                        details::duration_as_double(anim->duration),
-                                    0.0, 1.0);
-        if (t == 1.0) {
+        auto y = anim->easing_func(details::duration_as_double(current_time - anim->start_time) /
+                                   details::duration_as_double(anim->duration));
+        const double t = std::clamp(y, 0.0, 1.0);
+        if (std::abs(t - 1.0) < 1e-3) {
             anim->completed = true;
             *anim->animated_value = anim->target_value;
             anim->finish_cb();
         } else {
-
             *anim->animated_value =
-                anim->source_value +
-                details::Multiply<Value>::apply((anim->target_value - anim->source_value), t);
+                details::Multiply<Value>::apply(anim->target_value - anim->source_value, t);
         }
     }
     animations.erase(std::remove_if(std::begin(animations), std::end(animations),
@@ -76,8 +85,15 @@ struct AnimationsEngine {
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
                  std::function<void()> finish_cb = do_nothing) {
+        this->add(std::make_unique<animations::Animation<Value>>(
+            value_ref, target_value, duration, easing_funcs::linear, std::move(finish_cb)));
+    }
+
+    template <typename Value>
+    void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
+                 easing_func_t easing_func, std::function<void()> finish_cb = do_nothing) {
         this->add(std::make_unique<animations::Animation<Value>>(value_ref, target_value, duration,
-                                                                 std::move(finish_cb)));
+                                                                 easing_func, do_nothing));
     }
 
     template <typename Value> void add(std::unique_ptr<Animation<Value>> animation) {
