@@ -483,7 +483,70 @@ std::tuple<vector<p32>, DebugCtx> generate_random_roads(v2 scene_origin, float c
     return std::tuple{all_roads_triangles, dctx};
 }
 
+struct FakeAnimationObject {
+    FakeAnimationObject(v2 current_value, v2 src_value, v2 final_value)
+        : current_value(current_value), src_value(src_value), final_value(final_value) {}
+    v2 current_value;
+    v2 src_value;
+    v2 final_value;
+    bool completed = false;
+};
+
+inline double duration_as_double(steady_clock::duration d) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(d).count() * 1'000'000.0;
+}
+
+void fake_tick(vector<shared_ptr<FakeAnimationObject>> &animations) {
+    auto t = duration_as_double(steady_clock::now() - steady_clock::now()) / duration_as_double(10s);
+    for (auto &a : animations) {
+        if (!a->completed) {
+            a->current_value = a->src_value + (a->final_value - a->src_value) * (t * (2.0 - t));
+            if (t == 1.0) {
+                a->completed = true;
+            }
+        }
+    }
+    animations.erase(std::remove_if(std::begin(animations), std::end(animations),
+                                    [](auto &anim) { return anim->completed; }),
+                     std::end(animations));
+}
+
 int main() {
+    // animations performace test.
+    {
+        vector<shared_ptr<FakeAnimationObject>> fake_animations;
+
+        animations::AnimationsEngine animations;
+        v2 p1;
+        glm::vec2 p2;
+        double p3;
+        for (int i = 0; i < 1000; ++i) {
+            animations.animate(&p1, v2(1000, 1000), 10s);
+            animations.animate(&p2, glm::vec2(1000, 1000), 10s);
+            animations.animate(&p3, p3, 10s);
+
+            fake_animations.push_back(make_shared<FakeAnimationObject>(
+                v2(rand() % 1000, rand() % 1000), v2(rand() % 1000, rand() % 1000), v2(1, 1)));
+            fake_animations.push_back(make_shared<FakeAnimationObject>(
+                v2(rand() % 1000, rand() % 1000), v2(rand() % 1000, rand() % 1000), v2(1, 1)));
+            fake_animations.push_back(make_shared<FakeAnimationObject>(
+                v2(rand() % 1000, rand() % 1000), v2(rand() % 1000, rand() % 1000), v2(1, 1)));
+        }
+        auto start = steady_clock::now();
+        animations.tick();
+        auto tick_time_taken = steady_clock::now() - start;
+        log_debug("tick time taken: {}",
+                  std::chrono::duration_cast<std::chrono::microseconds>(tick_time_taken).count());
+
+        auto start_fake = steady_clock::now();
+        fake_tick(fake_animations);
+        auto tick_time_taken_fake = steady_clock::now() - start_fake;
+        log_debug(
+            "fake animations tick time taken: {}",
+            std::chrono::duration_cast<std::chrono::microseconds>(tick_time_taken_fake).count());
+    }
+
+    return -1;
 
     const std::string SHADERS_ROOT = []() {
         if (std::getenv("SHADERS_ROOT")) {
@@ -748,6 +811,8 @@ int main() {
 
     Scene scene_selected = Scene::world_lands;
 
+    std::shared_ptr<animations::AnimationHandle<double>> current_cam_zoom_animation;
+
     while (!glfwWindowShouldClose(window)) {
 
         if (camera_demo) {
@@ -819,7 +884,10 @@ int main() {
             show_debug_lines = false;
             show_roads = true;
             cam.focus_pos = glm::vec2(2421879040, 2732077056);
-            animations_engine.animate(&cam.zoom, 0.000185, 1s, []() {
+            if (current_cam_zoom_animation) {
+                current_cam_zoom_animation->cancel();
+            }
+            current_cam_zoom_animation = animations_engine.animate(&cam.zoom, 0.000185, 1s, []() {
                 log_debug("Camera goes to random roads scene... DONE");
             });
         }
@@ -833,9 +901,14 @@ int main() {
             show_lands_aa = true;
             cam.zoom = 1.9830403292225845e-09;
             cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
-            animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s, []() {
-                log_debug("Camera goes to World Lands scene...DONE");
-            });
+            if (current_cam_zoom_animation) {
+                current_cam_zoom_animation->cancel();
+            }
+
+            current_cam_zoom_animation =
+                animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s, []() {
+                    log_debug("Camera goes to World Lands scene...DONE");
+                });
         }
         if (ImGui::Selectable("Animatable line", scene_selected == Scene::show_animatable_line)) {
             scene_selected = Scene::show_animatable_line;
@@ -850,7 +923,10 @@ int main() {
                           (v2(al_vertices[2].coords) - v2(al_vertices[0].coords)) / 2.0;
             cam.focus_pos = glm::vec2(center.x, center.y);
             cam.zoom = 1.7525271027355085e-05;
-            animations_engine.animate(&cam.zoom, 0.001288400, 1s);
+            if (current_cam_zoom_animation) {
+                current_cam_zoom_animation->cancel();
+            }
+            current_cam_zoom_animation = animations_engine.animate(&cam.zoom, 0.001288400, 1s);
         }
         ImGui::ListBoxFooter();
 

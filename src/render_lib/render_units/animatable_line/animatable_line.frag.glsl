@@ -9,5 +9,5 @@ void main() {
     // float t = outT;
     float t = noise;
     t = noise;
-    FragColor = vec4(t, t, t, 1);
+    FragColor = vec4(0.36, 0.68, 0.66, 1);
 }
