@@ -846,7 +846,11 @@ int main() {
             show_debug_lines = false;
             show_roads = false;
             show_animatable_line = true;
-            cam.focus_pos = glm::vec2(al_vertices[0].coords.x, al_vertices[0].coords.y);
+            auto center = v2(al_vertices[0].coords) +
+                          (v2(al_vertices[2].coords) - v2(al_vertices[0].coords)) / 2.0;
+            cam.focus_pos = glm::vec2(center.x, center.y);
+            cam.zoom = 1.7525271027355085e-05;
+
             animations_engine.animate(&cam.zoom, 0.001288400, 1s);
         }
         ImGui::ListBoxFooter();
