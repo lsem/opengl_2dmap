@@ -9,11 +9,12 @@
 #include "render_lib/shader_program.h"
 
 namespace {
-#pragma pack(0)
-struct Vertex { // todo: is it packed?
+struct Vertex { 
     Vertex(float x, float y, float z, float col) : x(x), y(y), z(z), col(col) {}
     float x, y, z, col;
 };
+static_assert(sizeof(Vertex) == 4 * sizeof(float), "is it packed?");
+
 Vertex vertices3[] = {
     {10000.0, 20000.0, 0.0f, 1.0f}, {10100.0, 20100.0, 0.0f, 0.5f}, {10000.0, 20200.0, 0.0f, 0.0f}};
 

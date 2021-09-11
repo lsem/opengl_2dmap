@@ -11,11 +11,11 @@
 #include "common/os.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 
 #include "common/log.h"
@@ -720,7 +720,7 @@ int main() {
     v2 p4 = simplest_line[1] + d;
     vector<animatable_line::Vertex> al_vertices;
     for (auto p : {p1, p2, p3, p4}) {
-        al_vertices.emplace_back(gg::v22p(p), 1.0);
+        al_vertices.emplace_back(gg::v22p(p), 1.0f);
     }
     al_vertices[0].t = 0.0;
     al_vertices[1].t = 0.0;

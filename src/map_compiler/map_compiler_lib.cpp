@@ -1,12 +1,9 @@
-
-#include <algorithm>
 #include <common/global.h>
 #include <common/log.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
-#include <gg/gg.h>
 #include <list>
 #include <shapefil.h> // shapelib
 
@@ -21,7 +18,8 @@ shapes_t load_shapes(const fs::path &shape_file_path) {
         throw std::runtime_error(fmt::format("Path {} does not exist", shape_file_path));
     }
 
-    SHPHandle lands_shp = SHPOpen(shape_file_path.c_str(), "rb");
+    // Note, on MSVC fs::path::string_type is wstring
+    SHPHandle lands_shp = SHPOpen(shape_file_path.string().c_str(), "rb");
     if (!lands_shp) {
         throw std::runtime_error(
             fmt::format("failed opening lands dbf. error: {}({})", strerror(errno), errno));

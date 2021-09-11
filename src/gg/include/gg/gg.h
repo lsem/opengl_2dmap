@@ -1,13 +1,18 @@
 #pragma once
 
+// Define _USE_MATH_DEFINES before including <math.h> to expose mathematical constants macro
+// definitions for common math constants. These are placed under an #ifdef since these
+// commonly-defined names are not part of the C or C++ standards
 #define _USE_MATH_DEFINES
+#include <cmath>
+
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <ostream>
+#include <vector>
 
 // general geometry
 namespace gg {
