@@ -169,7 +169,7 @@ generate_lands_quads(std::string data_root_str, DebugCtx &dctx) {
                     int k = 0;
                     for (; it != std::end(vertices); ++it) {
                         vector<Color> colors({colors::red, colors::green, colors::blue});
-                        auto c = colors[parn_n];
+                        auto c = colors[parn_n % colors.size()];
                         c.r *= k / (double)M;
                         c.g *= k / (double)M;
                         c.b *= k / (double)M;
