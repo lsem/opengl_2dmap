@@ -521,6 +521,11 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+
     // ------------------------------------------------------------------------
     // Mouse control:
     //  press left mouse button and move left/right to pan window.
@@ -529,21 +534,25 @@ int main() {
     glfwSetScrollCallback(window, &glfw_helpers::GLFWMouseController::mouse_scroll_callback);
     glfwSetMouseButtonCallback(window, &glfw_helpers::GLFWMouseController::mouse_button_callback);
     glfw_helpers::GLFWMouseController::set_mouse_move_callback(
-        [&cam_control, &cam](auto *wnd, double xpos, double ypos) {
-            cam_control.mouse_move(xpos, ypos);
+        [&cam_control, &io](auto *wnd, double xpos, double ypos) {
+            if (!io.WantCaptureMouse)
+                cam_control.mouse_move(xpos, ypos);
         });
     glfw_helpers::GLFWMouseController::set_mouse_button_callback(
-        [&cam_control, &cam](GLFWwindow *wnd, int btn, int act, int mods) {
-            cam_control.mouse_click(wnd, btn, act, mods);
-            if (btn == GLFW_MOUSE_BUTTON_LEFT && act == GLFW_PRESS) {
-                double cx, cy;
-                glfwGetCursorPos(wnd, &cx, &cy);
-                print_coords_debug_info(cam, cx, cy);
+        [&cam_control, &io](GLFWwindow *wnd, int btn, int act, int mods) {
+            if (!io.WantCaptureMouse) {
+                cam_control.mouse_click(wnd, btn, act, mods);
+                if (btn == GLFW_MOUSE_BUTTON_LEFT && act == GLFW_PRESS) {
+                    double cx, cy;
+                    glfwGetCursorPos(wnd, &cx, &cy);
+                    print_coords_debug_info(cam_control.cam(), cx, cy);
+                }
             }
         });
     glfw_helpers::GLFWMouseController::set_mouse_scroll_callback(
-        [&cam, &cam_control](GLFWwindow *wnd, double xoffset, double yoffset) {
-            cam_control.mouse_scroll(wnd, xoffset, yoffset);
+        [&cam_control, &io](GLFWwindow *wnd, double xoffset, double yoffset) {
+            if (!io.WantCaptureMouse)
+                cam_control.mouse_scroll(wnd, xoffset, yoffset);
         });
     // ------------------------------------------------------------------------
 
@@ -555,10 +564,6 @@ int main() {
     glfwSwapInterval(0); // vsync
     glfwShowWindow(window);
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
     // Setup Platform/Renderer bindings
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(NULL);
