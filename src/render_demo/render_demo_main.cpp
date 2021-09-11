@@ -67,7 +67,7 @@ const v2 RANDOM_ROADS_SCENE_POSITION(MASTER_ORIGIN_X, MASTER_ORIGIN_Y);
 unsigned camera_x, camera_y;
 double camera_scale, camera_rotation;
 
-void update_fps_counter(GLFWwindow *window) {
+void update_fps_counter(GLFWwindow *window, float alternativeFps) {
     static double previous_seconds = glfwGetTime();
     static int frame_count;
     double current_seconds = glfwGetTime();
@@ -76,7 +76,7 @@ void update_fps_counter(GLFWwindow *window) {
         previous_seconds = current_seconds;
         double fps = (double)frame_count / elapsed_seconds;
         char tmp[128];
-        sprintf(tmp, "opengl @ fps: %.2f", fps);
+        sprintf(tmp, "opengl @ fps: %.2f / %.2f", fps, alternativeFps);
         glfwSetWindowTitle(window, tmp);
         frame_count = 0;
     }
@@ -763,7 +763,7 @@ int main() {
         glfwPollEvents();
         glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
         glClear(GL_COLOR_BUFFER_BIT);
-        update_fps_counter(window);
+        update_fps_counter(window, io.Framerate);
         process_input(window);
 
         // feed inputs to dear imgui, start new frame
