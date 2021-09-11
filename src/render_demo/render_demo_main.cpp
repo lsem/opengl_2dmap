@@ -525,6 +525,7 @@ int main() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
+    ImGuiStyle &guiStyle = ImGui::GetStyle();
 
     // ------------------------------------------------------------------------
     // Mouse control:
@@ -754,9 +755,21 @@ int main() {
 
     Scene scene_selected = Scene::world_lands;
 
+    bool lastFrameGuiWantCaptureMouse = !io.WantCaptureMouse;
     while (!glfwWindowShouldClose(window)) {
 
+        if (lastFrameGuiWantCaptureMouse != io.WantCaptureMouse) {
+            if (io.WantCaptureMouse) {
+                animations_engine.animate(&guiStyle.Alpha, 1.0f, 2.0f);
+            } else {
+                animations_engine.animate(&guiStyle.Alpha, 0.2f, 0.5f);
+            }
+            lastFrameGuiWantCaptureMouse = io.WantCaptureMouse;
+        }
+
         if (camera_demo) {
+            // TODO: animations_engine must control camera animation
+            // Don't use timer directly
             cam.zoom = cam.zoom * pow(2, std::cos(glfwGetTime()) / 2.0 * 0.01);
         }
 
@@ -866,8 +879,7 @@ int main() {
         ImGui::ColorEdit4("Clear color", clear_color);
         ImGui::Checkbox("Show debug lines", &show_debug_lines);
         ImGui::Checkbox("Show world BB", &show_world_bb);
-        if (ImGui::Checkbox("Show Lands", &show_lands))
-            ;
+        ImGui::Checkbox("Show Lands", &show_lands);
         ImGui::Checkbox("Show Lands AA", &show_lands_aa);
         ImGui::Checkbox("Camera Demo", &camera_demo);
         ImGui::Checkbox("Show Debug Scene", &show_debug_scene);
