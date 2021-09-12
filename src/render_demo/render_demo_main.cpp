@@ -758,23 +758,15 @@ int main() {
     std::thread worldLandsSceneLoader([&] {
         loadWorldLandsScene(world_lands_scene_data, scene_mutex, lands_dctx);
     });
-    
-    log_debug("There are {} debug lines for LANDS", lands_dctx.lines.size());
-    // Debug context lines.
-    vector<tuple<v2, v2, Color>> lines_v2;
-    for (auto [a, b, c] : lands_dctx.lines) {
-        lines_v2.push_back(tuple{v2{a}, v2{b}, c});
-    }
 
-    LinesUnit road_dbg_lines{(unsigned)lines_v2.size()};
+    LinesUnit road_dbg_lines;
     if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
         std::cerr << "failed initializing renderer for road_dbg_lines\n";
         glfwTerminate();
         return -1;
     }
-    road_dbg_lines.assign_lines(lines_v2);
 
-    LinesUnit world_frame_lines(4);
+    LinesUnit world_frame_lines;
     if (!world_frame_lines.load_shaders(SHADERS_ROOT)) {
         log_err("failed loading lines unit shaders for world frame");
         return -1;
@@ -869,6 +861,15 @@ int main() {
                 lands.set_data(lands_points, lands_indices);
                 lands_aa.set_data(aa_vertices, aa_indices);
                 world_lands_scene_data.reset();
+
+                log_debug("There are {} debug lines for LANDS", lands_dctx.lines.size());
+                // Debug context lines.
+                vector<tuple<v2, v2, Color>> lines_v2;
+                for (auto [a, b, c] : lands_dctx.lines) {
+                    lines_v2.push_back(tuple{v2{a}, v2{b}, c});
+                }
+
+                road_dbg_lines.assign_lines(lines_v2);
 
                 // We must reset pointer to the select scene because vector can reallocate its
                 // elements and invalidate all pointers

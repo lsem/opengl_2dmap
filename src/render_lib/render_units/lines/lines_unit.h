@@ -21,16 +21,13 @@ class LinesUnit : public IRenderUnit {
     bool m_dirty = true;
 
   public:
-    explicit LinesUnit(unsigned count) {
-        m_geometry.resize(count * 4);
-        m_colors.resize(count * 6);
-    }
-
     using line_type = std::tuple<gg::v2, gg::v2, Color>;
 
     void assign_lines(std::vector<line_type> lines) {
-        assert(m_geometry.size() == lines.size() * 4);
-        assert(m_colors.size() == lines.size() * 6);
+        assert(m_geometry.capacity() == 0);
+        assert(m_colors.capacity() == 0);
+        m_geometry.reserve(lines.size() * 4);
+        m_colors.reserve(lines.size() * 6);
         m_geometry.clear();
         m_colors.clear();
         for (auto [a, b, color] : lines) {
@@ -75,8 +72,10 @@ class LinesUnit : public IRenderUnit {
         glBindVertexArray(0); // unbind
     }
 
-    void reupload_geometry() {
+    bool reupload_geometry() {
         if (m_vao == -1) {
+            if (m_geometry.empty())
+                return false;
             create_buffers();
         }
         assert(m_vao != -1);
@@ -92,6 +91,8 @@ class LinesUnit : public IRenderUnit {
         GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, m_colors.size() * sizeof(m_colors[0]),
                                  m_colors.data()));
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0)); // unbind
+
+        return true;
     }
 
     bool load_shaders(std::string shaders_root) {
@@ -111,7 +112,8 @@ class LinesUnit : public IRenderUnit {
         }
 
         if (m_dirty) {
-            reupload_geometry();
+            if (!reupload_geometry())
+                return;
             m_dirty = false;
         }
         GL_CHECK(glUseProgram(m_shader->id));

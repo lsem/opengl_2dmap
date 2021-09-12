@@ -11,7 +11,7 @@ v2 from_glmvec2(glm::vec2 v) { return v2{v.x, v.y}; }
 
 // Helper to display cam control internal stuff.
 struct CameraControlVisuals {
-    LinesUnit lines{2}; // todo: do nopt hold lines renderer here but only data.
+    LinesUnit lines; // todo: do nopt hold lines renderer here but only data.
 
     bool init_render(string shaders_root) {
         if (!this->lines.load_shaders(shaders_root)) {
