@@ -87,7 +87,7 @@ struct AnimationsEngine {
     void animate(Value *value_ref, Value target_value, Value speed_per_second,
                  easing_func_t easing_func, FinishCb &&finish_cb = do_nothing) {
         steady_clock::duration duration = std::chrono::milliseconds(
-            static_cast<unsigned>(abs((target_value - *value_ref) / speed_per_second) * 1000));
+            static_cast<unsigned>(std::abs((target_value - *value_ref) / speed_per_second) * 1000));
         animate(value_ref, target_value, duration, easing_func, std::move(finish_cb));
     }
 
