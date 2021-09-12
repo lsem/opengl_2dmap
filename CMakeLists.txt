@@ -11,8 +11,6 @@ HunterGate(
 
 project(navipoc)
 
-#find_package(OpenGL REQUIRED)
-
 hunter_add_package(GTest)
 find_package(GTest CONFIG REQUIRED)
 
@@ -25,10 +23,6 @@ find_package(glm REQUIRED)
 hunter_add_package(fmt)
 find_package(fmt CONFIG REQUIRED)
 
-hunter_add_package(Microsoft.GSL)
-find_package(Microsoft.GSL CONFIG REQUIRED)
-
-
 option (FORCE_COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." TRUE)
 if (${FORCE_COLORED_OUTPUT})
     if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -38,8 +32,7 @@ if (${FORCE_COLORED_OUTPUT})
     endif ()
 endif ()
 
-hunter_add_package(glfw)
-find_package(glfw3 REQUIRED)
+set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(vendor/earcut.hpp-0.12.4)
 add_subdirectory(vendor/shapelib-1.5.0)
