@@ -483,7 +483,23 @@ std::tuple<vector<p32>, DebugCtx> generate_random_roads(v2 scene_origin, float c
     return std::tuple{all_roads_triangles, dctx};
 }
 
-enum class Scene { roads, world_lands, show_animatable_line };
+struct Scene {
+    Scene(
+        std::string label, std::function<void()> on_activate = [] {},
+        std::function<void()> on_deactivate = [] {})
+        : label(label), on_activate(on_activate), on_deactivate(on_deactivate) {}
+
+    // Scene is move only
+    Scene(Scene &&) noexcept = default;
+    Scene(const Scene &) = delete;
+    Scene &operator=(Scene &&) noexcept = default;
+    Scene &operator=(const Scene &) = delete;
+
+    std::string label;
+    std::function<void()> on_activate;
+    std::function<void()> on_deactivate;
+};
+
 struct GuiState {
     bool show_debug_lines = true;
     bool show_world_bb = true;
@@ -494,62 +510,28 @@ struct GuiState {
     bool show_roads = false;
     bool show_animatable_line = false;
     float clear_color[4] = {0.0, 0.0, 0.0, 1.0};
-    Scene scene_selected = Scene::world_lands;
+    vector<Scene> scenes;
+    const Scene *scene_selected = nullptr;
 };
 
-void renderGui(GuiState &state, Cam2d &cam, animations::AnimationsEngine& animations_engine,
-               const vector<animatable_line::Vertex> &al_vertices) {
+void renderGui(GuiState &state) {
     // feed inputs to dear imgui, start new frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
 
     ImGui::NewFrame();
 
-    if (ImGui::ListBoxHeader("Scenes", 3)) {
-        if (ImGui::Selectable("Random Roads", state.scene_selected == Scene::roads)) {
-            state.scene_selected = Scene::roads;
-            log_debug("Camera goes to random roads scene...");
-            state.show_lands = false;
-            state.show_lands_aa = false;
-            state.show_debug_scene = false;
-            state.show_world_bb = false;
-            state.show_debug_lines = false;
-            state.show_roads = true;
-            cam.focus_pos = glm::vec2(2421879040, 2732077056);
-            animations_engine.animate(&cam.zoom, 0.000185, 1s, []() {
-                log_debug("Camera goes to random roads scene... DONE");
-            });
-        }
-        if (ImGui::Selectable("Animatable line",
-                              state.scene_selected == Scene::show_animatable_line)) {
-            state.scene_selected = Scene::show_animatable_line;
-            state.show_lands = false;
-            state.show_lands_aa = false;
-            state.show_debug_scene = false;
-            state.show_world_bb = false;
-            state.show_debug_lines = false;
-            state.show_roads = false;
-            state.show_animatable_line = true;
-            auto center = v2(al_vertices[0].coords) +
-                          (v2(al_vertices[2].coords) - v2(al_vertices[0].coords)) / 2.0;
-            cam.focus_pos = glm::vec2(center.x, center.y);
-            cam.zoom = 1.7525271027355085e-05;
-
-            animations_engine.animate(&cam.zoom, 0.001288400, 1s);
-        }
-        if (ImGui::Selectable("World Lands", state.scene_selected == Scene::world_lands)) {
-            state.scene_selected = Scene::world_lands;
-            log_debug("Camera goes to World Lands scene...");
-            state.show_roads = false;
-            state.show_debug_scene = false;
-            state.show_world_bb = false;
-            state.show_lands = true;
-            state.show_lands_aa = true;
-            cam.zoom = 1.9830403292225845e-09;
-            cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
-            animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s, []() {
-                log_debug("Camera goes to World Lands scene...DONE");
-            });
+    if (ImGui::ListBoxHeader("Scenes", state.scenes.size())) {
+        for (auto &s : state.scenes) {
+            if (ImGui::Selectable(s.label.c_str(), &s == state.scene_selected)) {
+                if (&s != state.scene_selected) {
+                    if (state.scene_selected) {
+                        state.scene_selected->on_deactivate();
+                    }
+                    state.scene_selected = &s;
+                    state.scene_selected->on_activate();
+                }
+            }
         }
         ImGui::ListBoxFooter();
     }
@@ -828,6 +810,46 @@ int main() {
 
     GuiState state;
 
+    // Add scenes
+    state.scenes.emplace_back("Random Roads", [&] {
+        log_debug("Camera goes to random roads scene...");
+        state.show_lands = false;
+        state.show_lands_aa = false;
+        state.show_debug_scene = false;
+        state.show_world_bb = false;
+        state.show_debug_lines = false;
+        state.show_roads = true;
+        cam.focus_pos = glm::vec2(2421879040, 2732077056);
+        animations_engine.animate(&cam.zoom, 0.000185, 1s,
+                                  []() { log_debug("Camera goes to random roads scene... DONE"); });
+    });
+    state.scenes.emplace_back("Animatable line", [&] {
+        state.show_lands = false;
+        state.show_lands_aa = false;
+        state.show_debug_scene = false;
+        state.show_world_bb = false;
+        state.show_debug_lines = false;
+        state.show_roads = false;
+        state.show_animatable_line = true;
+        auto center = v2(al_vertices[0].coords) +
+                      (v2(al_vertices[2].coords) - v2(al_vertices[0].coords)) / 2.0;
+        cam.focus_pos = glm::vec2(center.x, center.y);
+        cam.zoom = 1.7525271027355085e-05;
+        animations_engine.animate(&cam.zoom, 0.001288400, 1s);
+    });
+    state.scenes.emplace_back("World Lands", [&] {
+        log_debug("Camera goes to World Lands scene...");
+        state.show_roads = false;
+        state.show_debug_scene = false;
+        state.show_world_bb = false;
+        state.show_lands = true;
+        state.show_lands_aa = true;
+        cam.zoom = 1.9830403292225845e-09;
+        cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
+        animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s,
+                                  []() { log_debug("Camera goes to World Lands scene...DONE"); });
+    });
+
     bool lastFrameGuiWantCaptureMouse = !io.WantCaptureMouse;
     while (!glfwWindowShouldClose(window)) {
 
@@ -896,7 +918,7 @@ int main() {
             crosshair.render_frame(cam);
         }
 
-        renderGui(state, cam, animations_engine, al_vertices);
+        renderGui(state);
 
         glfwSwapBuffers(window);
 
