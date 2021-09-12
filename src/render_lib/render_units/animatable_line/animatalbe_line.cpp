@@ -29,7 +29,8 @@ bool AnimatableLine::make_buffers() {
     static_assert(sizeof(p32) == sizeof(uint32_t) * 2); // todo: fix me.
     GL_CHECK(glVertexAttribPointer(0, 2, GL_UNSIGNED_INT, GL_FALSE, sizeof(Vertex),
                                    (void *)offsetof(Vertex, coords)));
-    GL_CHECK(glVertexAttribIPointer(1, 1, GL_BYTE, sizeof(Vertex), (void *)offsetof(Vertex, t)));
+    GL_CHECK(glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                                   (void *)offsetof(Vertex, t)));
 
     GL_CHECK(glEnableVertexAttribArray(0));
     GL_CHECK(glEnableVertexAttribArray(1));
@@ -71,7 +72,7 @@ void AnimatableLine::set_data(span<Vertex> vertices, span<uint32_t> indices) {
 /*virtual*/
 void AnimatableLine::render_frame(const camera::Cam2d &cam) /*override*/ {
     m_shader->attach();
-    auto proj = cam.projection_maxtrix();
+    auto proj = cam.projection_maxtrix();   
     GL_CHECK(glUniformMatrix4fv(glGetUniformLocation(m_shader->id, "proj"), 1, GL_FALSE,
                                 glm::value_ptr(proj)));
     GL_CHECK(glUniform1f(glGetUniformLocation(m_shader->id, "scale"), (float)cam.zoom));
