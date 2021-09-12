@@ -17,6 +17,8 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <thread>
+#include <mutex>
 
 #include "common/log.h"
 #include "gg/gg.h"
@@ -550,6 +552,31 @@ void renderGui(GuiState &state) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+using world_lands_scene_data_type =
+    std::tuple<vector<p32>, vector<uint32_t>, vector<roads_shader_aa::AAVertex>, vector<uint32_t>>;
+
+void loadWorldLandsScene(std::optional<world_lands_scene_data_type> &world_lands_scene_data,
+                         std::mutex &scene_mutex, DebugCtx &lands_dctx) {
+    const auto DATA_ROOT_env = std::getenv("DATA_ROOT");
+    if (!DATA_ROOT_env) {
+        log_warn("No DATA_ROOT env var specified");
+    }
+    const auto data_root = std::string(DATA_ROOT_env ? DATA_ROOT_env : "");
+    auto maybe_lands = generate_lands_quads(data_root, lands_dctx);
+    if (maybe_lands) {
+        auto& [lands_points, lands_indices, aa_vertices, aa_indices] = *maybe_lands;
+        log_debug("lands points: {}", lands_points.size());
+        log_debug("lands indices: {}", lands_indices.size());
+        log_debug("lands aa points: {}", aa_vertices.size());
+        log_debug("lands aa indidices: {}", aa_indices.size());
+
+        auto lock = std::unique_lock(scene_mutex);
+        world_lands_scene_data = std::move(maybe_lands);
+    } else {
+        log_warn("Lands will not be displayed");
+    }
+}
+
 int main() {
 
     const std::string SHADERS_ROOT = []() {
@@ -714,32 +741,24 @@ int main() {
     if (!lands_aa.make_buffers()) {
         log_err("failed creating buffers lands_aa");
         return -1;
+    }    
+
+    if (!lands.load_shaders(SHADERS_ROOT)) {
+        log_err("failed loading lands shaders");
+        return -1;
     }
-    const auto DATA_ROOT_env = std::getenv("DATA_ROOT");
-    if (!DATA_ROOT_env) {
-        log_warn("No DATA_ROOT env var specified");
+    if (!lands.make_buffers()) {
+        log_err("failed making lands buffers");
+        return -1;
     }
-    const auto data_root = std::string(DATA_ROOT_env ? DATA_ROOT_env : "");
-    auto maybe_lands = generate_lands_quads(data_root, lands_dctx);
-    if (maybe_lands) {
-        auto [lands_points, lands_indices, aa_vertices, aa_indices] = *maybe_lands;
-        if (!lands.load_shaders(SHADERS_ROOT)) {
-            log_err("failed loading lands shaders");
-            return -1;
-        }
-        if (!lands.make_buffers()) {
-            log_err("failed making lands buffers");
-            return -1;
-        }
-        log_debug("lands points: {}", lands_points.size());
-        log_debug("lands indices: {}", lands_indices.size());
-        log_debug("lands aa points: {}", aa_vertices.size());
-        log_debug("lands aa indidices: {}", aa_indices.size());
-        lands.set_data(lands_points, lands_indices);
-        lands_aa.set_data(aa_vertices, aa_indices);
-    } else {
-        log_warn("Lands will not be displayed");
-    }
+
+    std::mutex scene_mutex;
+    std::optional<world_lands_scene_data_type> world_lands_scene_data;
+
+    std::thread worldLandsSceneLoader([&] {
+        loadWorldLandsScene(world_lands_scene_data, scene_mutex, lands_dctx);
+    });
+    
     log_debug("There are {} debug lines for LANDS", lands_dctx.lines.size());
     // Debug context lines.
     vector<tuple<v2, v2, Color>> lines_v2;
@@ -837,21 +856,49 @@ int main() {
         cam.zoom = 1.7525271027355085e-05;
         animations_engine.animate(&cam.zoom, 0.001288400, 1s);
     });
-    state.scenes.emplace_back("World Lands", [&] {
-        log_debug("Camera goes to World Lands scene...");
-        state.show_roads = false;
-        state.show_debug_scene = false;
-        state.show_world_bb = false;
-        state.show_lands = true;
-        state.show_lands_aa = true;
-        cam.zoom = 1.9830403292225845e-09;
-        cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
-        animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s,
-                                  []() { log_debug("Camera goes to World Lands scene...DONE"); });
-    });
 
     bool lastFrameGuiWantCaptureMouse = !io.WantCaptureMouse;
     while (!glfwWindowShouldClose(window)) {
+
+        {
+            // Check for loaded scene
+            auto lock = std::unique_lock(scene_mutex);
+            if (world_lands_scene_data) {
+                auto &[lands_points, lands_indices, aa_vertices, aa_indices] =
+                    *world_lands_scene_data;
+                lands.set_data(lands_points, lands_indices);
+                lands_aa.set_data(aa_vertices, aa_indices);
+                world_lands_scene_data.reset();
+
+                // We must reset pointer to the select scene because vector can reallocate its
+                // elements and invalidate all pointers
+                // TODO: don't use pointers to maintain current scene
+                bool noSceneSelected = state.scene_selected == nullptr;
+                if (state.scene_selected) {
+                    state.scene_selected->on_deactivate();
+                    state.scene_selected = nullptr;
+                }
+
+                state.scenes.emplace_back("World Lands", [&] {
+                    log_debug("Camera goes to World Lands scene...");
+                    state.show_roads = false;
+                    state.show_debug_scene = false;
+                    state.show_world_bb = false;
+                    state.show_lands = true;
+                    state.show_lands_aa = true;
+                    cam.zoom = 1.9830403292225845e-09;
+                    cam.focus_pos = glm::vec2(gg::U32_MAX / 2, gg::U32_MAX / 2);
+                    animations_engine.animate(&cam.zoom, 6.742621227902704e-07, 1s, []() {
+                        log_debug("Camera goes to World Lands scene...DONE");
+                    });
+                });
+
+                if (noSceneSelected) {
+                    state.scene_selected = &state.scenes.back();
+                    state.scene_selected->on_activate();
+                }
+            }
+        }
 
         if (lastFrameGuiWantCaptureMouse != io.WantCaptureMouse) {
             if (io.WantCaptureMouse) {
@@ -936,6 +983,8 @@ int main() {
 
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    worldLandsSceneLoader.join();
 
     return 0;
 }
