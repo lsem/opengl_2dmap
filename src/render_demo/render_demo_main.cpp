@@ -592,7 +592,7 @@ int main() {
     }
 
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+        log_err("Failed to initialize GLFW");
         return -1;
     }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -603,7 +603,7 @@ int main() {
     GLFWwindow *window =
         glfwCreateWindow(g_window_width, g_window_height, "Red Triangle", nullptr, nullptr);
     if (window == nullptr) {
-        std::cerr << "Failed to open GLFW window" << std::endl;
+        log_err("Failed to open GLFW window");
         glfwTerminate();
         return -1;
     }
@@ -652,7 +652,7 @@ int main() {
     // ------------------------------------------------------------------------
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cout << "Failed to initialize GLAD" << std::endl;
+        log_err("Failed to initialize GLAD");
         return -1;
     }
 
@@ -761,7 +761,7 @@ int main() {
 
     LinesUnit road_dbg_lines;
     if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
-        std::cerr << "failed initializing renderer for road_dbg_lines\n";
+        log_err("failed initializing renderer for road_dbg_lines");
         glfwTerminate();
         return -1;
     }
@@ -849,7 +849,6 @@ int main() {
         animations_engine.animate(&cam.zoom, 0.001288400, 1s);
     });
 
-    bool lastFrameGuiWantCaptureMouse = !io.WantCaptureMouse;
     while (!glfwWindowShouldClose(window)) {
 
         {
@@ -901,14 +900,6 @@ int main() {
             }
         }
 
-        if (lastFrameGuiWantCaptureMouse != io.WantCaptureMouse) {
-            if (io.WantCaptureMouse) {
-                animations_engine.animate(&guiStyle.Alpha, 1.0f, 2.0f);
-            } else {
-                animations_engine.animate(&guiStyle.Alpha, 0.2f, 0.5f);
-            }
-            lastFrameGuiWantCaptureMouse = io.WantCaptureMouse;
-        }
 
         if (state.camera_demo) {
             // TODO: animations_engine must control camera animation
