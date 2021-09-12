@@ -137,7 +137,8 @@ struct AnimationsEngine {
         } else if constexpr (std::is_same_v<Value, glm::vec2>) {
             return glmvec2_animations;
         } else {
-            static_assert(0, "Animation of given type is not supported");
+            static_assert(!std::is_same_v<Value, Value>,
+                          "Animation of given type is not supported");
         }
     }
 
