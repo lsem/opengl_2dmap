@@ -35,6 +35,7 @@
 #include "render_units/roads_shader_aa/make_geometry.h"
 #include "render_units/roads_shader_aa/roads_shader_aa_unit.h"
 #include "render_units/triangle/render_triangle.h"
+#include "render_units/polygon/polygon.h"
 #include <type_traits>
 
 #include "render_lib/debug_ctx.h"
@@ -500,6 +501,8 @@ struct Scene {
     std::string label;
     std::function<void()> on_activate;
     std::function<void()> on_deactivate;
+    std::function<bool(double, double)> on_mouse_move = [](double, double) { return false; };
+    std::function<bool(int, int, int)> on_mouse_click = [](int, int, int) { return false; };
 };
 
 struct GuiState {
@@ -511,6 +514,9 @@ struct GuiState {
     bool show_debug_scene = true;
     bool show_roads = false;
     bool show_animatable_line = false;
+    bool show_polygon_scene = false;
+    float polygon_outline_radius = 10;
+    float nearest_pt_dist = 0;
     float clear_color[4] = {0.0, 0.0, 0.0, 1.0};
     vector<Scene> scenes;
     const Scene *scene_selected = nullptr;
@@ -547,6 +553,11 @@ void renderGui(GuiState &state) {
     ImGui::Checkbox("Show Debug Scene", &state.show_debug_scene);
     ImGui::Checkbox("Show Roads", &state.show_roads);
     ImGui::Checkbox("Show Animatable Line", &state.show_animatable_line);
+    ImGui::Checkbox("poligon scene", &state.show_polygon_scene);
+    if (state.show_polygon_scene) {
+        ImGui::SliderFloat("Outline radius", &state.polygon_outline_radius, -1000.0f, 1000.0f);
+        ImGui::Text("Nearest pt dist {} %.3f", state.nearest_pt_dist);
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -621,6 +632,8 @@ int main() {
     ImGuiIO &io = ImGui::GetIO();
     ImGuiStyle &guiStyle = ImGui::GetStyle();
 
+    GuiState state;
+
     // ------------------------------------------------------------------------
     // Mouse control:
     //  press left mouse button and move left/right to pan window.
@@ -629,19 +642,24 @@ int main() {
     glfwSetScrollCallback(window, &glfw_helpers::GLFWMouseController::mouse_scroll_callback);
     glfwSetMouseButtonCallback(window, &glfw_helpers::GLFWMouseController::mouse_button_callback);
     glfw_helpers::GLFWMouseController::set_mouse_move_callback(
-        [&cam_control, &io](auto *wnd, double xpos, double ypos) {
-            if (!io.WantCaptureMouse)
-                cam_control.mouse_move(xpos, ypos);
+        [&cam_control, &io, &state](auto *wnd, double xpos, double ypos) {
+            if (io.WantCaptureMouse)
+                return;
+            if (state.scene_selected && state.scene_selected->on_mouse_move(xpos, ypos))
+                return;
+            cam_control.mouse_move(xpos, ypos);
         });
     glfw_helpers::GLFWMouseController::set_mouse_button_callback(
-        [&cam_control, &io](GLFWwindow *wnd, int btn, int act, int mods) {
-            if (!io.WantCaptureMouse) {
-                cam_control.mouse_click(wnd, btn, act, mods);
-                if (btn == GLFW_MOUSE_BUTTON_LEFT && act == GLFW_PRESS) {
-                    double cx, cy;
-                    glfwGetCursorPos(wnd, &cx, &cy);
-                    print_coords_debug_info(cam_control.cam(), cx, cy);
-                }
+        [&cam_control, &io, &state](GLFWwindow *wnd, int btn, int act, int mods) {
+            if (io.WantCaptureMouse)
+                return;
+            if (state.scene_selected && state.scene_selected->on_mouse_click(btn, act, mods))
+                return;
+            cam_control.mouse_click(wnd, btn, act, mods);
+            if (btn == GLFW_MOUSE_BUTTON_LEFT && act == GLFW_PRESS) {
+                double cx, cy;
+                glfwGetCursorPos(wnd, &cx, &cy);
+                print_coords_debug_info(cam_control.cam(), cx, cy);
             }
         });
     glfw_helpers::GLFWMouseController::set_mouse_scroll_callback(
@@ -814,12 +832,22 @@ int main() {
     vector<uint32_t> al_indices({0, 1, 2, 2, 3, 0});
     animatable_line.set_data(al_vertices, al_indices);
 
+    // 
+    // Polygon scene
+    //
+
+    polygon::Polygon polygonScene;
+    if (!polygonScene.load_shaders(SHADERS_ROOT)) {
+        logic_error("Can not load shaders for polygon scene");
+        return -1;
+    }
+
+    polygonScene.load_test_data();
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     animations::AnimationsEngine animations_engine;
-
-    GuiState state;
 
     // Add scenes
     state.scenes.emplace_back("Random Roads", [&] {
@@ -848,6 +876,27 @@ int main() {
         cam.zoom = 1.7525271027355085e-05;
         animations_engine.animate(&cam.zoom, 0.001288400, 1s);
     });
+    Scene polygon(
+        "Polygon",
+        [&] {
+            state.show_lands = false;
+            state.show_lands_aa = false;
+            state.show_debug_scene = false;
+            state.show_world_bb = false;
+            state.show_debug_lines = false;
+            state.show_roads = false;
+            state.show_animatable_line = false;
+            state.show_polygon_scene = true;
+            cam.focus_pos = polygonScene.get_center();
+            animations_engine.animate(&cam.zoom, polygonScene.get_zoom(), 1s);
+        },
+        [&] { state.show_polygon_scene = false; });
+    polygon.on_mouse_move = [&](double x, double y) {
+        auto [pt, dist] = polygonScene.point_at_cursor(cam, x, y);
+        state.nearest_pt_dist = dist;
+        return false;
+    };
+    state.scenes.emplace_back(std::move(polygon));
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -956,6 +1005,11 @@ int main() {
         if (g_show_crosshair) {
             crosshair.render_frame(cam);
         }
+
+        if (state.show_polygon_scene) {
+            polygonScene.reload_test_data(state.polygon_outline_radius);            
+            polygonScene.render_frame(cam, g_wireframe_mode);
+        }                                                                                   
 
         renderGui(state);
 
