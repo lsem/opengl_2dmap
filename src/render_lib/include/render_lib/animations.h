@@ -38,8 +38,8 @@ template <typename Value> struct Animation {
 };
 
 namespace details {
-inline double duration_as_double(steady_clock::duration d) {
-    return std::chrono::duration_cast<std::chrono::microseconds>(d).count() * 1'000'000.0;
+inline double nano(steady_clock::duration d) {
+    return static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count());
 }
 
 // For some reason, glm vec scalar multiplication produces 1-d vector..
@@ -50,9 +50,8 @@ inline void process_tick(vector<Animation<Value>> &animations,
                          steady_clock::time_point current_time) {
     for (auto &anim : animations) {
         assert(!anim.completed);
-        const double t = std::clamp(details::duration_as_double(current_time - anim.start_time) /
-                                        details::duration_as_double(anim.duration),
-                                    0.0, 1.0);
+        const double t = std::clamp(
+            details::nano(current_time - anim.start_time) / details::nano(anim.duration), 0.0, 1.0);
         if (t == 1.0) {
             anim.completed = true;
             *anim.animated_value = anim.target_value;
