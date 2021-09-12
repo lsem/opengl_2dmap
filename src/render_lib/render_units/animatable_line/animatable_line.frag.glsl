@@ -3,8 +3,10 @@
 out vec4 FragColor;
 
 in float outT;
+uniform float gamma;
 
 void main() {
 
-    FragColor = vec4(0.22, 0.55, outT, 1);
+    float alpha = pow(outT, 1.0/gamma);
+    FragColor = vec4(0.22, 0.55, 0.55, alpha);
 }

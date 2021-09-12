@@ -21,6 +21,16 @@ struct Vertex {
 };
 
 class AnimatableLine : public IRenderUnit {
+  public:
+    AnimatableLine() : m_gamma(1.0) {}
+    bool load_shaders(std::string shaders_root);
+    void set_data(span<Vertex> vertices, span<uint32_t> indices);
+    bool make_buffers();
+    void render_gui();
+    virtual void render_frame(const camera::Cam2d &cam) override;
+
+  private:
+    float m_gamma;
     unsigned m_vao = 0;
     unsigned m_vbo = 0;
     unsigned m_ebo = 0;
@@ -28,11 +38,5 @@ class AnimatableLine : public IRenderUnit {
     size_t m_vertices_uploaded = 0;
     size_t m_indices_uploaded = 0;
     std::unique_ptr<shader_program::ShaderProgram> m_shader;
-
-  public:
-    bool load_shaders(std::string shaders_root);
-    void set_data(span<Vertex> vertices, span<uint32_t> indices);
-    bool make_buffers();
-    virtual void render_frame(const camera::Cam2d &cam) override;
 };
 } // namespace animatable_line

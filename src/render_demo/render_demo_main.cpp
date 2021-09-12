@@ -15,10 +15,10 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <thread>
-#include <mutex>
 
 #include "common/log.h"
 #include "gg/gg.h"
@@ -516,14 +516,13 @@ struct GuiState {
     const Scene *scene_selected = nullptr;
 };
 
-void renderGui(GuiState &state) {
+template <class ScenesUICb> void renderGui(GuiState &state, ScenesUICb &&scenes_ui_cb) {
     // feed inputs to dear imgui, start new frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
-
     ImGui::NewFrame();
 
-    if (ImGui::ListBoxHeader("Scenes", state.scenes.size())) {
+    if (ImGui::BeginListBox("Scenes")) {
         for (auto &s : state.scenes) {
             if (ImGui::Selectable(s.label.c_str(), &s == state.scene_selected)) {
                 if (&s != state.scene_selected) {
@@ -535,7 +534,7 @@ void renderGui(GuiState &state) {
                 }
             }
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
     }
 
     ImGui::ColorEdit4("Clear color", state.clear_color);
@@ -547,6 +546,8 @@ void renderGui(GuiState &state) {
     ImGui::Checkbox("Show Debug Scene", &state.show_debug_scene);
     ImGui::Checkbox("Show Roads", &state.show_roads);
     ImGui::Checkbox("Show Animatable Line", &state.show_animatable_line);
+
+    scenes_ui_cb();
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -755,9 +756,8 @@ int main() {
     std::mutex scene_mutex;
     std::optional<world_lands_scene_data_type> world_lands_scene_data;
 
-    std::thread worldLandsSceneLoader([&] {
-        loadWorldLandsScene(world_lands_scene_data, scene_mutex, lands_dctx);
-    });
+    std::thread worldLandsSceneLoader(
+        [&] { loadWorldLandsScene(world_lands_scene_data, scene_mutex, lands_dctx); });
 
     LinesUnit road_dbg_lines;
     if (!road_dbg_lines.load_shaders(SHADERS_ROOT)) {
@@ -957,7 +957,11 @@ int main() {
             crosshair.render_frame(cam);
         }
 
-        renderGui(state);
+        renderGui(state, [&]() {
+            if (state.show_animatable_line) {
+                animatable_line.render_gui();
+            }
+        }); // Common GUI
 
         glfwSwapBuffers(window);
 
