@@ -849,7 +849,6 @@ int main() {
         animations_engine.animate(&cam.zoom, 0.001288400, 1s);
     });
 
-    bool lastFrameGuiWantCaptureMouse = !io.WantCaptureMouse;
     while (!glfwWindowShouldClose(window)) {
 
         {
@@ -901,14 +900,6 @@ int main() {
             }
         }
 
-        if (lastFrameGuiWantCaptureMouse != io.WantCaptureMouse) {
-            if (io.WantCaptureMouse) {
-                animations_engine.animate(&guiStyle.Alpha, 1.0f, 2.0f);
-            } else {
-                animations_engine.animate(&guiStyle.Alpha, 0.2f, 0.5f);
-            }
-            lastFrameGuiWantCaptureMouse = io.WantCaptureMouse;
-        }
 
         if (state.camera_demo) {
             // TODO: animations_engine must control camera animation
