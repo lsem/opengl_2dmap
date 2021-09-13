@@ -1,6 +1,8 @@
 #pragma once
 
+#include "animations.h"
 #include "camera.h"
+#include <common/log.h>
 #include <glm/glm.hpp>
 
 namespace camera_control {
@@ -20,11 +22,15 @@ class CameraControl {
     bool rotation = false;
     double rotation_start = 0.0; // camera rotation at the moment when rotation started.
     glm::vec2 rot_start_point, rot_curr_point, screen_center;
+    animations::AnimationsEngine &m_animations_engine;
+
+    std::optional<glm::vec2> prev_world_pos;
 
     camera::Cam2d &cam() { return m_cam_ref; }
 
   public:
-    CameraControl(camera::Cam2d &cam_ref) : m_cam_ref(cam_ref) {}
+    CameraControl(camera::Cam2d &cam_ref, animations::AnimationsEngine &animations_engine)
+        : m_cam_ref(cam_ref), m_animations_engine(animations_engine) {}
 
     void mouse_move(double xpos, double ypos) {
         if (this->panning) {
@@ -92,25 +98,31 @@ class CameraControl {
         // We want to have scrolling around mouse position. In order
         // to achieve such effect we need to keep invariant that world
         // coordinates of mouse position not changed after zooming.
+
+        auto &camera = cam();
+
+        double target_zoom;
+        const double SCROOL_STEP_FACTOR = 0.1;
+        auto *animation = m_animations_engine.find_animation(&camera.zoom);
+        if (animation) {
+            target_zoom = animation->target_value * pow(2, yoffset * SCROOL_STEP_FACTOR);
+        } else {
+            target_zoom = camera.zoom * pow(2, yoffset * SCROOL_STEP_FACTOR);
+        }
+
         double cx, cy;
         glfwGetCursorPos(wnd, &cx, &cy);
-        auto mouse_pos_world = cam().unproject(glm::vec2{cx, cy});
-        cam().zoom_pos = mouse_pos_world;
-        cam().zoom = cam().zoom * pow(2, yoffset * 0.1); // zoom slightly more in than out.
-        log_debug("camera-zoom: {}", cam().zoom);
-        cam().zoom = std::clamp(cam().zoom, 0.00000000212537, 1000.0);
-        auto mouse_pos_after_zoom_world = cam().unproject(glm::vec2{cx, cy});
-        auto diff = mouse_pos_after_zoom_world - mouse_pos_world;
-        cam().focus_pos -= diff;
-        cam().zoom_pos = glm::vec2{cx, cy};
+        auto screen_zoom_pos = glm::vec2(cx, cy);
+        auto prev_zoom_world_pos = camera.unproject(screen_zoom_pos);
 
-#ifndef NDEBUG
-        auto control_diff = cam().unproject(glm::vec2{cx, cy}) - mouse_pos_world;
-        // assert(control_diff[0] < 1.0 && control_diff[1] < 1.0);
-        if (control_diff[0] > 1.0 || control_diff[1] > 1.0) {
-            log_warn("control_diff[0] < 1.0 && control_diff[1] < 1.0");
-        }
-#endif
+        m_animations_engine.animate(
+            &camera.zoom, target_zoom, 0ms,
+            [&camera, screen_zoom_pos, prev_zoom_world_pos]() mutable {
+                auto zoom_pos_in_world = camera.unproject(screen_zoom_pos);
+                camera.focus_pos -= (zoom_pos_in_world - prev_zoom_world_pos);
+                prev_zoom_world_pos = camera.unproject(screen_zoom_pos);
+            },
+            [] {});
     }
 };
 

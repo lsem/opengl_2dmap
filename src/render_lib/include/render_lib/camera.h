@@ -10,7 +10,6 @@ struct Cam2d {
     glm::vec2 focus_pos;
     double zoom = 3.0;
     double rotation = 0.0;
-    glm::vec2 zoom_pos;
 
     // todo: this is view projection matrix.
     glm::mat4 projection_maxtrix() const {
