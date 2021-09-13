@@ -609,9 +609,11 @@ int main() {
         return -1;
     }
 
+    animations::AnimationsEngine animations_engine;
+
     camera::Cam2d cam;
     cam.window_size = glm::vec2{g_window_width, g_window_height};
-    CameraControl cam_control{cam};
+    CameraControl cam_control(cam, animations_engine);
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -742,7 +744,7 @@ int main() {
     if (!lands_aa.make_buffers()) {
         log_err("failed creating buffers lands_aa");
         return -1;
-    }    
+    }
 
     if (!lands.load_shaders(SHADERS_ROOT)) {
         log_err("failed loading lands shaders");
@@ -816,8 +818,6 @@ int main() {
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    animations::AnimationsEngine animations_engine;
 
     GuiState state;
 
@@ -900,7 +900,6 @@ int main() {
             }
         }
 
-
         if (state.camera_demo) {
             // TODO: animations_engine must control camera animation
             // Don't use timer directly
@@ -957,7 +956,7 @@ int main() {
             crosshair.render_frame(cam);
         }
 
-        renderGui(state, [&]() {
+        renderGui(state, [&] {
             if (state.show_animatable_line) {
                 animatable_line.render_gui();
             }
