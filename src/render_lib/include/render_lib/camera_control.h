@@ -15,7 +15,7 @@ namespace camera_control {
 // to camera control instructions (zoom/rotation/translations) it can even
 // not be aware about camera class after all.
 class CameraControl {
-  public: // todo: make it private once refactoring finished.
+  public:
     camera::Cam2d &m_cam_ref;
     bool panning = false;
     int prev_x = 0, prev_y = 0; // use int to be able to compare with 0.
@@ -23,8 +23,6 @@ class CameraControl {
     double rotation_start = 0.0; // camera rotation at the moment when rotation started.
     glm::vec2 rot_start_point, rot_curr_point, screen_center;
     animations::AnimationsEngine &m_animations_engine;
-
-    std::optional<glm::vec2> prev_world_pos;
 
     camera::Cam2d &cam() { return m_cam_ref; }
 
@@ -107,15 +105,15 @@ class CameraControl {
 
         double cx, cy;
         glfwGetCursorPos(wnd, &cx, &cy);
-        auto screen_zoom_pos = glm::vec2(cx, cy);
-        auto prev_zoom_world_pos = camera.unproject(screen_zoom_pos);
+        auto screen_zoom_center = glm::vec2(cx, cy);
+        auto prev_world_zoom_center = camera.unproject(screen_zoom_center);
 
         m_animations_engine.animate(
             &camera.zoom, target_zoom, 300ms,
-            [&camera, screen_zoom_pos, prev_zoom_world_pos]() mutable {
-                auto zoom_pos_in_world = camera.unproject(screen_zoom_pos);
-                camera.focus_pos -= (zoom_pos_in_world - prev_zoom_world_pos);
-                prev_zoom_world_pos = camera.unproject(screen_zoom_pos);
+            [&camera, screen_zoom_center, prev_world_zoom_center]() mutable {
+                auto world_zoom_center = camera.unproject(screen_zoom_center);
+                camera.focus_pos -= (world_zoom_center - prev_world_zoom_center);
+                prev_world_zoom_center = camera.unproject(screen_zoom_center);
             },
             [] { /* finish */ });
     }
