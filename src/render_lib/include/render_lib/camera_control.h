@@ -4,6 +4,7 @@
 #include "camera.h"
 #include <common/log.h>
 #include <glm/glm.hpp>
+#include <imgui/imgui.h>
 
 namespace camera_control {
 
@@ -23,6 +24,8 @@ class CameraControl {
     double rotation_start = 0.0; // camera rotation at the moment when rotation started.
     glm::vec2 rot_start_point, rot_curr_point, screen_center;
     animations::AnimationsEngine &m_animations_engine;
+    animations::easing_func_t m_easing_func = animations::easing_funcs::ease_out_quad;
+    int animation_speed_ms = 300;
 
     camera::Cam2d &cam() { return m_cam_ref; }
 
@@ -109,7 +112,7 @@ class CameraControl {
         auto prev_world_zoom_center = camera.unproject(screen_zoom_center);
 
         m_animations_engine.animate(
-            &camera.zoom, target_zoom, 300ms,
+            &camera.zoom, target_zoom, std::chrono::milliseconds(animation_speed_ms), m_easing_func,
             [&camera, screen_zoom_center, prev_world_zoom_center]() mutable {
                 auto world_zoom_center = camera.unproject(screen_zoom_center);
                 camera.focus_pos -= (world_zoom_center - prev_world_zoom_center);
@@ -117,6 +120,26 @@ class CameraControl {
             },
             [] { /* finish */ });
     }
-};
+
+    void render_gui() {
+        ImGui::SliderInt("Animation Speed", &animation_speed_ms, 0, 500, NULL,
+                         ImGuiSliderFlags_AlwaysClamp);
+
+        ImGui::BeginListBox("Camera\nAnimation\nEasing");
+        if (ImGui::Selectable("linear", m_easing_func == animations::easing_funcs::linear)) {
+            m_easing_func = animations::easing_funcs::linear;
+        }
+        if (ImGui::Selectable("ease_out_quad",
+                              m_easing_func == animations::easing_funcs::ease_out_quad)) {
+            m_easing_func = animations::easing_funcs::ease_out_quad;
+        }
+        if (ImGui::Selectable("ease_in_out_quad",
+                              m_easing_func == animations::easing_funcs::ease_in_out_quad)) {
+            m_easing_func = animations::easing_funcs::ease_in_out_quad;
+        }
+        ImGui::EndListBox();
+    }
+
+}; // namespace camera_control
 
 } // namespace camera_control

@@ -12,6 +12,9 @@ namespace easing_funcs {
 
 inline double linear(double t) { return t; }
 inline double ease_out_quad(double t) { return t * (2.0 - t); }
+inline double ease_in_out_quad(double t) {
+    return t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2;
+}
 
 auto default_ = ease_out_quad;
 
@@ -100,9 +103,10 @@ class AnimationsEngine {
     // Overload for specifying progress callback.
     template <typename Value>
     void animate(Value *value_ref, Value target_value, steady_clock::duration duration,
-                 std::function<void()> progress_cb, std::function<void()> finish_cb) {
-        animate_impl(value_ref, target_value, duration, easing_funcs::default_,
-                     std::move(finish_cb), std::move(progress_cb));
+                 easing_func_t easing_func, std::function<void()> progress_cb,
+                 std::function<void()> finish_cb) {
+        animate_impl(value_ref, target_value, duration, easing_func, std::move(finish_cb),
+                     std::move(progress_cb));
     }
 
     template <typename Value>

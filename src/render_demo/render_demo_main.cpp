@@ -960,6 +960,8 @@ int main() {
             if (state.show_animatable_line) {
                 animatable_line.render_gui();
             }
+
+            cam_control.render_gui();
         }); // Common GUI
 
         glfwSwapBuffers(window);
