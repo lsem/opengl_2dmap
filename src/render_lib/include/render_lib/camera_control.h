@@ -28,8 +28,8 @@ class CameraControl {
     int animation_speed_ms = 300;
     steady_clock::time_point m_last_move_event_tp;
     optional<v2> m_maybe_last_pos;
-    v2 m_current_velocity;
-    double m_current_velocity_magnitude;
+    v2 m_initial_velocity_vec;
+    double m_remaining_velocity;
     bool m_animations_progress = false;
     bool m_kinetic_scrolling_enabled = true;
 
@@ -44,13 +44,12 @@ class CameraControl {
             return;
         }
 
-        m_current_velocity_magnitude *= 0.97;
+        m_remaining_velocity *= 0.97;
 
         auto dt = tp - m_last_move_event_tp;
         auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(dt).count();
-        if (m_current_velocity_magnitude > 0.000001) {
-            v2 screen_displacement = -normalized(m_current_velocity) *
-                                     m_current_velocity_magnitude *
+        if (m_remaining_velocity > 1e-5) {
+            v2 screen_displacement = -normalized(m_initial_velocity_vec) * m_remaining_velocity *
                                      (double)dt_ms; // displacement in pixels per milliseconds
 
             cam().focus_pos = cam().unproject(cam().screen_center() + screen_displacement);
@@ -70,7 +69,7 @@ class CameraControl {
             auto dt = move_event_tp - m_last_move_event_tp;
             auto df = curr_pos - last_pos;
 
-            m_current_velocity =
+            m_initial_velocity_vec =
                 df / std::chrono::duration_cast<std::chrono::milliseconds>(dt).count();
 
             cam().focus_pos -= (cam().unproject(curr_pos) - cam().unproject(last_pos));
@@ -130,15 +129,15 @@ class CameraControl {
                 // we are going to continue scrolling based on current moment velocity
                 // so lets initialize the process.
                 if (m_kinetic_scrolling_enabled) {
-                    m_current_velocity_magnitude = len(m_current_velocity);
-                    if (m_current_velocity_magnitude > 0.000001 &&
-                        !std::isinf(m_current_velocity_magnitude)) {
+                    m_remaining_velocity = len(m_initial_velocity_vec);
+                    // FIXME: find out where this INF comes from.
+                    if (m_remaining_velocity > 1e-5 && !std::isinf(m_remaining_velocity)) {
                         m_last_move_event_tp = steady_clock::now();
                         m_animations_progress = true;
                     } else {
-                        log_debug(
-                            "kinetic scroll not started, magnitude is lower than threshold: {}",
-                            m_current_velocity_magnitude);
+                        log_debug("kinetic scroll not started, initial velocity lower than "
+                                  "thsreshold: {}",
+                                  m_remaining_velocity);
                     }
                 }
             }
