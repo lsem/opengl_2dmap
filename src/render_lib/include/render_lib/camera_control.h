@@ -31,6 +31,7 @@ class CameraControl {
     v2 m_current_velocity;
     double m_current_velocity_magnitude;
     bool m_animations_progress = false;
+    bool m_kinetic_scrolling_enabled = true;
 
     camera::Cam2d &cam() { return m_cam_ref; }
 
@@ -128,14 +129,17 @@ class CameraControl {
 
                 // we are going to continue scrolling based on current moment velocity
                 // so lets initialize the process.
-                m_current_velocity_magnitude = len(m_current_velocity);
-                if (m_current_velocity_magnitude > 0.000001 &&
-                    !std::isinf(m_current_velocity_magnitude)) {
-                    m_last_move_event_tp = steady_clock::now();
-                    m_animations_progress = true;
-                } else {
-                    log_debug("kinetic scroll not started, magnitude is lower than threshold: {}",
-                              m_current_velocity_magnitude);
+                if (m_kinetic_scrolling_enabled) {
+                    m_current_velocity_magnitude = len(m_current_velocity);
+                    if (m_current_velocity_magnitude > 0.000001 &&
+                        !std::isinf(m_current_velocity_magnitude)) {
+                        m_last_move_event_tp = steady_clock::now();
+                        m_animations_progress = true;
+                    } else {
+                        log_debug(
+                            "kinetic scroll not started, magnitude is lower than threshold: {}",
+                            m_current_velocity_magnitude);
+                    }
                 }
             }
         }
@@ -169,22 +173,27 @@ class CameraControl {
     }
 
     void render_gui() {
-        ImGui::SliderInt("Animation Speed", &animation_speed_ms, 0, 500, NULL,
-                         ImGuiSliderFlags_AlwaysClamp);
+        if (ImGui::CollapsingHeader("Camera Control")) {
+            ImGui::Checkbox("Kinetic Scrolling", &m_kinetic_scrolling_enabled);
 
-        ImGui::BeginListBox("Camera\nAnimation\nEasing");
-        if (ImGui::Selectable("linear", m_easing_func == animations::easing_funcs::linear)) {
-            m_easing_func = animations::easing_funcs::linear;
+            ImGui::SliderInt("Animation\nSpeed", &animation_speed_ms, 0, 500, NULL,
+                             ImGuiSliderFlags_AlwaysClamp);
+
+            ImGui::BeginListBox("Camera\nAnimation\nEasing");
+
+            if (ImGui::Selectable("linear", m_easing_func == animations::easing_funcs::linear)) {
+                m_easing_func = animations::easing_funcs::linear;
+            }
+            if (ImGui::Selectable("ease_out_quad",
+                                  m_easing_func == animations::easing_funcs::ease_out_quad)) {
+                m_easing_func = animations::easing_funcs::ease_out_quad;
+            }
+            if (ImGui::Selectable("ease_in_out_quad",
+                                  m_easing_func == animations::easing_funcs::ease_in_out_quad)) {
+                m_easing_func = animations::easing_funcs::ease_in_out_quad;
+            }
+            ImGui::EndListBox();
         }
-        if (ImGui::Selectable("ease_out_quad",
-                              m_easing_func == animations::easing_funcs::ease_out_quad)) {
-            m_easing_func = animations::easing_funcs::ease_out_quad;
-        }
-        if (ImGui::Selectable("ease_in_out_quad",
-                              m_easing_func == animations::easing_funcs::ease_in_out_quad)) {
-            m_easing_func = animations::easing_funcs::ease_in_out_quad;
-        }
-        ImGui::EndListBox();
     }
 
 }; // namespace camera_control
