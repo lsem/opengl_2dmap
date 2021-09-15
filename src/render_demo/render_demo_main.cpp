@@ -965,6 +965,8 @@ int main() {
         glfwSwapBuffers(window);
 
         animations_engine.tick();
+        cam_control.process_animations();
+        
 
         // in case window size has changed, make camera aware of it.
         // this should have been done in framebuffer callback but I cannot

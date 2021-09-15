@@ -3,7 +3,6 @@
 #include "animations.h"
 #include "camera.h"
 #include <common/log.h>
-#include <glm/glm.hpp>
 
 namespace camera_control {
 
@@ -18,11 +17,15 @@ class CameraControl {
   public:
     camera::Cam2d &m_cam_ref;
     bool panning = false;
-    int prev_x = 0, prev_y = 0; // use int to be able to compare with 0.
     bool rotation = false;
     double rotation_start = 0.0; // camera rotation at the moment when rotation started.
     glm::vec2 rot_start_point, rot_curr_point, screen_center;
     animations::AnimationsEngine &m_animations_engine;
+    steady_clock::time_point m_last_move_event_tp;
+    optional<v2> m_maybe_last_pos;
+    v2 m_current_velocity;
+    double m_current_velocity_magnitude;
+    bool m_animations_progress = false;
 
     camera::Cam2d &cam() { return m_cam_ref; }
 
@@ -30,19 +33,45 @@ class CameraControl {
     CameraControl(camera::Cam2d &cam_ref, animations::AnimationsEngine &animations_engine)
         : m_cam_ref(cam_ref), m_animations_engine(animations_engine) {}
 
-    void mouse_move(double xpos, double ypos) {
-        if (this->panning) {
-            if (this->prev_x == 0.0 && this->prev_y == 0.0) {
-                this->prev_x = xpos;
-                this->prev_y = ypos;
-            }
-            // todo: we can just save prev already unprojected.
-            auto prev_u = cam().unproject(glm::vec2{this->prev_x, this->prev_y});
-            auto curr_u = cam().unproject(glm::vec2{xpos, ypos});
-            cam().focus_pos -= curr_u - prev_u;
+    void process_animations(steady_clock::time_point tp = steady_clock::now()) {
+        if (!m_animations_progress) {
+            return;
+        }
 
-            this->prev_x = xpos;
-            this->prev_y = ypos;
+        m_current_velocity_magnitude *= 0.97;
+
+        auto dt = tp - m_last_move_event_tp;
+        auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(dt).count();
+        if (m_current_velocity_magnitude > 0.000001) {
+            v2 screen_displacement = -normalized(m_current_velocity) *
+                                     m_current_velocity_magnitude *
+                                     (double)dt_ms; // displacement in pixels per milliseconds
+
+            cam().focus_pos = cam().unproject(cam().screen_center() + screen_displacement);
+            m_last_move_event_tp = tp;
+        } else {
+            m_animations_progress = false;
+        }
+    }
+
+    void mouse_move(double xpos, double ypos) {
+        auto curr_pos = v2(xpos, ypos);
+        auto move_event_tp = steady_clock::now();
+
+        if (this->panning) {
+            auto &last_pos = *m_maybe_last_pos;
+
+            auto dt = move_event_tp - m_last_move_event_tp;
+            auto df = curr_pos - last_pos;
+
+            m_current_velocity =
+                df / std::chrono::duration_cast<std::chrono::milliseconds>(dt).count();
+
+            cam().focus_pos -= (cam().unproject(curr_pos) - cam().unproject(last_pos));
+
+            m_maybe_last_pos = curr_pos;
+            m_last_move_event_tp = move_event_tp;
+
         } else if (this->rotation) {
             this->rot_curr_point = glm::vec2{xpos, ypos};
             // angle between these start and current vectors is our rotation.
@@ -63,10 +92,13 @@ class CameraControl {
 
     // todo: get rid of glfw leak here.
     void mouse_click(GLFWwindow *wnd, int btn, int act, int mods) {
+        m_animations_progress = false;
+
         if (act == GLFW_PRESS && btn == GLFW_MOUSE_BUTTON_LEFT) {
+            double cx, cy;
+            glfwGetCursorPos(wnd, &cx, &cy);
+
             if (mods == GLFW_MOD_SHIFT) {
-                double cx, cy;
-                glfwGetCursorPos(wnd, &cx, &cy);
                 this->rotation = true;
                 this->rotation_start = cam().rotation;
                 // we want to have this vectors used for calculation rotation in
@@ -78,6 +110,8 @@ class CameraControl {
             } else {
                 // todo: start position can be captured here
                 this->panning = true;
+                m_maybe_last_pos = v2(cx, cy);
+                m_last_move_event_tp = steady_clock::now();
             }
         } else if (act == GLFW_RELEASE && btn == GLFW_MOUSE_BUTTON_LEFT) {
             if (this->rotation) {
@@ -85,8 +119,19 @@ class CameraControl {
                 // todo: reset rest of the state just for hygyene purposes.
             } else if (this->panning) {
                 this->panning = false;
-                this->prev_x = 0;
-                this->prev_y = 0;
+                m_maybe_last_pos = std::nullopt;
+
+                // we are going to continue scrolling based on current moment velocity
+                // so lets initialize the process.
+                m_current_velocity_magnitude = len(m_current_velocity);
+                if (m_current_velocity_magnitude > 0.000001 &&
+                    !std::isinf(m_current_velocity_magnitude)) {
+                    m_last_move_event_tp = steady_clock::now();
+                    m_animations_progress = true;
+                } else {
+                    log_debug("kinetic scroll not started, magnitude is lower than threshold: {}",
+                              m_current_velocity_magnitude);
+                }
             }
         }
     }

@@ -14,6 +14,8 @@
 #include <ostream>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 // general geometry
 namespace gg {
 
@@ -99,6 +101,9 @@ struct v2 {
     v2(double x, double y) : x(x), y(y) {}
     v2(v2 a, v2 b) : v2(b[0] - a[0], b[1] - a[1]) {}
     v2(p32 p) : v2(p.x, p.y) {}
+    v2(const glm::vec2 &glmv) : v2(glmv.x, glmv.y) {}
+
+    operator glm::vec2() const { return glm::vec2(this->x, this->y); }
 
     double operator[](size_t idx) const {
         assert(idx < 3);
