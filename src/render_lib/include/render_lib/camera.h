@@ -11,13 +11,17 @@ struct Cam2d {
     double zoom = 3.0;
     double rotation = 0.0;
 
+    glm::vec2 screen_center() const {
+        return glm::vec2(this->window_size.x / 2.0, this->window_size.y / 2.0);
+    }
+
     // todo: this is view projection matrix.
     glm::mat4 projection_maxtrix() const {
         float w = this->window_size.x, h = this->window_size.y;
         auto projection_m = glm::ortho(0.0f, w, 0.0f, h);
 
         glm::mat4 view_m{1.0f};
-        view_m = glm::translate(view_m, glm::vec3{w / 2.0f, h / 2.0f, 0.0f});              // 4-th
+        view_m = glm::translate(view_m, glm::vec3(screen_center(), 0.0f));                 // 4-th
         view_m = glm::rotate(view_m, (float)this->rotation, glm::vec3{0.0f, 0.0f, -1.0f}); // 3-rd
         view_m = glm::scale(view_m, glm::vec3{this->zoom, this->zoom, 1.0});               // 2-nd
         view_m = glm::translate(view_m, glm::vec3{-focus_pos, 0.0f});                      // 1-st
@@ -33,5 +37,9 @@ struct Cam2d {
         return glm::inverse(projection_maxtrix()) * clip_p;
     }
 };
+
+inline glm::vec2 screen_distance_to_world(Cam2d &cam, glm::vec2 a, glm::vec2 b) {
+    return cam.unproject(b) - cam.unproject(a);
+}
 
 } // namespace camera

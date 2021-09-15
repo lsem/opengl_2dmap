@@ -4,6 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -15,6 +16,7 @@
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 
+using std::optional;
 using std::string;
 using std::string_view;
 using std::tuple;
